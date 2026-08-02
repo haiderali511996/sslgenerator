@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
-import { api, Certificate, Domain, VerificationChallenge } from "@/lib/api";
+import { api, ChainConfig, Certificate, Domain, Payment, VerificationChallenge, WalletStatus } from "@/lib/api";
+import { sendUncPayment } from "@/lib/wallet";
 
 type Method = "http" | "dns" | "email";
 
@@ -20,13 +22,45 @@ export default function DomainDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [walletStatus, setWalletStatus] = useState<WalletStatus | null>(null);
+  const [chainConfig, setChainConfig] = useState<ChainConfig | null>(null);
+  const [payment, setPayment] = useState<Payment | null>(null);
+
   useEffect(() => {
     refreshDomain();
     api.listCertificates().then((certs) => {
       const latest = certs.filter((c) => c.domain_id === domainId).sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
       if (latest) setCertificate(latest);
     });
+    api.walletStatus().then(setWalletStatus).catch(() => {});
+    api.walletConfig().then(setChainConfig).catch(() => {});
+    refreshPayment();
   }, [domainId]);
+
+  function refreshPayment() {
+    api.listPayments().then((payments) => {
+      const relevant = payments
+        .filter((p) => p.domain_id === domainId)
+        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+      if (relevant) setPayment(relevant);
+    });
+  }
+
+  async function payWithWallet() {
+    if (!walletStatus?.address || !chainConfig) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const txHash = await sendUncPayment(walletStatus.address, chainConfig.treasury_address, chainConfig.cert_price, chainConfig.decimals);
+      const result = await api.submitUncPayment(domainId, txHash);
+      setPayment(result);
+      if (result.status === "failed") setError(result.error_message || "Payment could not be verified yet — try again in a moment.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Payment failed");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function refreshDomain() {
     api.listDomains().then((domains) => {
@@ -69,6 +103,7 @@ export default function DomainDetailPage() {
     try {
       const cert = await api.requestCertificate(domainId);
       setCertificate(cert);
+      refreshPayment();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not request certificate");
     } finally {
@@ -209,9 +244,42 @@ export default function DomainDetailPage() {
           )}
 
           {!certificate && domain.verification_method !== "email" && (
-            <button disabled={busy} onClick={requestCertificate} className="bg-unc-600 hover:bg-unc-500 disabled:opacity-50 px-4 py-2 rounded-md text-white">
-              Request certificate
-            </button>
+            <>
+              {walletStatus?.is_unc_member ? (
+                <p className="text-sm text-unc-500 mb-2">UNC member — this certificate is free.</p>
+              ) : payment?.status === "confirmed" ? (
+                <p className="text-sm text-unc-500 mb-2">Payment confirmed — ready to generate.</p>
+              ) : chainConfig ? (
+                <div className="bg-slate-900 border border-slate-800 rounded-md p-3 text-sm space-y-2 mb-2">
+                  <p>
+                    This domain requires a payment of <strong>{chainConfig.cert_price} {chainConfig.native_symbol}</strong>{" "}
+                    (or a linked wallet holding {chainConfig.min_balance_for_free}+ {chainConfig.native_symbol} for free access).
+                  </p>
+                  {!walletStatus?.address ? (
+                    <p className="text-amber-400">
+                      Link a UNC wallet from the{" "}
+                      <Link href="/dashboard" className="underline">
+                        dashboard
+                      </Link>{" "}
+                      first.
+                    </p>
+                  ) : (
+                    <button disabled={busy} onClick={payWithWallet} className="bg-unc-600 hover:bg-unc-500 disabled:opacity-50 px-4 py-2 rounded-md text-white">
+                      {busy ? "Waiting for payment..." : `Pay ${chainConfig.cert_price} ${chainConfig.native_symbol}`}
+                    </button>
+                  )}
+                  {payment?.status === "failed" && <p className="text-red-400">{payment.error_message}</p>}
+                </div>
+              ) : null}
+
+              <button
+                disabled={busy || !(walletStatus?.is_unc_member || payment?.status === "confirmed")}
+                onClick={requestCertificate}
+                className="bg-unc-600 hover:bg-unc-500 disabled:opacity-50 px-4 py-2 rounded-md text-white"
+              >
+                Request certificate
+              </button>
+            </>
           )}
 
           {certificate && certificate.status === "awaiting_challenge" && (

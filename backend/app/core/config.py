@@ -24,6 +24,26 @@ class Settings(BaseSettings):
 
     frontend_base_url: str = "http://localhost:3000"
 
+    # --- UNC chain config ---
+    # DUMMY TESTNET PLACEHOLDERS. UNC's real testnet RPC/chain ID/treasury
+    # address were not available yet, so these are stand-ins — override
+    # every one of them via .env once real values exist. The integration
+    # assumes an EVM-compatible JSON-RPC endpoint (eth_getBalance,
+    # eth_getTransactionReceipt, eth_chainId), which is standard for
+    # Geth/Besu-based custom chains; adjust unc_chain.py if UNC's node
+    # speaks a different RPC dialect.
+    unc_rpc_url: str = "https://testnet-rpc.unc-chain.example"
+    unc_chain_id: int = 977001
+    unc_chain_name: str = "UNC Testnet"
+    unc_native_symbol: str = "UNC"
+    unc_decimals: int = 18
+    unc_block_explorer_url: str = "https://testnet-explorer.unc-chain.example"
+
+    unc_treasury_address: str = "0x1234567890123456789012345678901234567890"
+    unc_cert_price: float = 5.0
+    unc_min_balance_for_free: float = 1000.0
+    unc_min_confirmations: int = 1
+
     class Config:
         env_file = ".env"
 

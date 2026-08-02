@@ -107,14 +107,17 @@ def start_order(certificate_id: str, domain_name: str, validation_method: str) -
             "email verification alone cannot be used to issue a certificate."
         )
 
-    acme_client = _get_acme_client()
-    private_key_pem, csr_pem = _generate_key_and_csr(domain_name)
-    order = acme_client.new_order(csr_pem)
+    try:
+        acme_client = _get_acme_client()
+        private_key_pem, csr_pem = _generate_key_and_csr(domain_name)
+        order = acme_client.new_order(csr_pem)
 
-    authz = order.authorizations[0]
-    chall_type = challenges.HTTP01 if validation_method == "http" else challenges.DNS01
-    achall = next(c for c in authz.body.challenges if isinstance(c.chall, chall_type))
-    response, validation = achall.response_and_validation(acme_client.net.key)
+        authz = order.authorizations[0]
+        chall_type = challenges.HTTP01 if validation_method == "http" else challenges.DNS01
+        achall = next(c for c in authz.body.challenges if isinstance(c.chall, chall_type))
+        response, validation = achall.response_and_validation(acme_client.net.key)
+    except errors.Error as exc:
+        raise AcmeIssuanceError(f"Could not start ACME order: {exc}") from exc
 
     _PENDING_ORDERS[certificate_id] = {
         "acme_client": acme_client,

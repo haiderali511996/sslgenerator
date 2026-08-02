@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, certificates, domains, ssl_checker
+from app.api.routes import auth, certificates, domains, payments, ssl_checker, wallet
 from app.core.config import settings
 
 app = FastAPI(title=settings.app_name)
@@ -18,6 +18,8 @@ app.include_router(auth.router)
 app.include_router(domains.router)
 app.include_router(certificates.router)
 app.include_router(ssl_checker.router)
+app.include_router(wallet.router)
+app.include_router(payments.router)
 
 
 @app.get("/api/health")

@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { api, Domain } from "@/lib/api";
+import WalletConnect from "@/components/WalletConnect";
 
 export default function DashboardPage() {
   const { user, loading } = useAuth();
@@ -53,6 +54,10 @@ export default function DashboardPage() {
       <p className="text-slate-400 mb-6">
         {user.is_unc_member ? "UNC member — premium cert options unlocked." : "Add a domain, verify ownership, then generate an SSL certificate."}
       </p>
+
+      <div className="mb-8">
+        <WalletConnect />
+      </div>
 
       <form onSubmit={handleAddDomain} className="flex gap-2 mb-8">
         <input

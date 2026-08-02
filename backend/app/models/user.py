@@ -21,6 +21,7 @@ class User(Base):
 
     unc_wallet_address: Mapped[str | None] = mapped_column(String(128), nullable=True)
     is_unc_member: Mapped[bool] = mapped_column(Boolean, default=False)
+    unc_wallet_nonce: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 

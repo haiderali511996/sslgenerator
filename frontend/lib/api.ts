@@ -99,6 +99,37 @@ export interface SslCheckResult {
   error: string | null;
 }
 
+export interface ChainConfig {
+  rpc_url: string;
+  chain_id: number;
+  chain_name: string;
+  native_symbol: string;
+  decimals: number;
+  block_explorer_url: string;
+  treasury_address: string;
+  cert_price: number;
+  min_balance_for_free: number;
+}
+
+export interface WalletStatus {
+  address: string | null;
+  balance: number | null;
+  is_unc_member: boolean;
+  min_balance_for_free: number;
+}
+
+export interface Payment {
+  id: string;
+  domain_id: string;
+  certificate_id: string | null;
+  tx_hash: string;
+  amount: number;
+  status: string;
+  error_message: string | null;
+  created_at: string;
+  confirmed_at: string | null;
+}
+
 export const api = {
   signup: (data: { email: string; password: string; full_name?: string; unc_wallet_address?: string }) =>
     apiFetch<AuthResponse>("/api/auth/signup", { method: "POST", body: JSON.stringify(data) }),
@@ -131,4 +162,15 @@ export const api = {
 
   checkSsl: (host: string, port = 443) =>
     apiFetch<SslCheckResult>("/api/ssl-checker", { method: "POST", body: JSON.stringify({ host, port }) }),
+
+  walletConfig: () => apiFetch<ChainConfig>("/api/wallet/config"),
+  walletStatus: () => apiFetch<WalletStatus>("/api/wallet/status"),
+  walletNonce: () => apiFetch<{ message: string }>("/api/wallet/nonce", { method: "POST" }),
+  walletLink: (address: string, signature: string) =>
+    apiFetch<WalletStatus>("/api/wallet/link", { method: "POST", body: JSON.stringify({ address, signature }) }),
+  walletUnlink: () => apiFetch<void>("/api/wallet/unlink", { method: "POST" }),
+
+  listPayments: () => apiFetch<Payment[]>("/api/payments"),
+  submitUncPayment: (domain_id: string, tx_hash: string) =>
+    apiFetch<Payment>("/api/payments/unc/submit", { method: "POST", body: JSON.stringify({ domain_id, tx_hash }) }),
 };

@@ -5,9 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.certificate import Certificate
 from app.models.domain import Domain
+from app.models.payment import Payment
 from app.models.user import User
 from app.schemas.certificate import CertificateDownload, CertificateOut, CertificateRequest
 from app.services.acme_client import AcmeIssuanceError, finalize_order, start_order
@@ -58,6 +60,24 @@ def request_certificate(payload: CertificateRequest, db: Session = Depends(get_d
             detail="Certificate issuance requires HTTP or DNS validation (email verification alone is not accepted by Let's Encrypt)",
         )
 
+    payment: Payment | None = None
+    if not current_user.is_unc_member:
+        payment = (
+            db.query(Payment)
+            .filter(Payment.domain_id == domain.id, Payment.status == "confirmed", Payment.certificate_id.is_(None))
+            .order_by(Payment.confirmed_at.desc())
+            .first()
+        )
+        if not payment:
+            raise HTTPException(
+                status_code=402,
+                detail=(
+                    f"This domain requires payment of {settings.unc_cert_price} UNC "
+                    f"(or {settings.unc_min_balance_for_free}+ UNC in your linked wallet for free access). "
+                    f"Pay via /api/payments/unc/submit, then retry."
+                ),
+            )
+
     certificate = Certificate(
         domain_id=domain.id,
         status="awaiting_challenge",
@@ -66,6 +86,11 @@ def request_certificate(payload: CertificateRequest, db: Session = Depends(get_d
     db.add(certificate)
     db.commit()
     db.refresh(certificate)
+
+    if payment:
+        payment.certificate_id = certificate.id
+        db.add(payment)
+        db.commit()
 
     try:
         instructions = start_order(str(certificate.id), domain.name, domain.verification_method)

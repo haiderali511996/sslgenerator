@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 
 export const metadata: Metadata = {
   title: "UNC SSL Generator",
@@ -11,10 +12,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
+      <body className="flex flex-col min-h-screen">
         <AuthProvider>
           <Navbar />
-          <main className="max-w-6xl mx-auto px-4 py-8">{children}</main>
+          <main className="flex-1">{children}</main>
+          <Footer />
         </AuthProvider>
       </body>
     </html>

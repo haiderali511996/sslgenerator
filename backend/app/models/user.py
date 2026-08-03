@@ -23,6 +23,10 @@ class User(Base):
     is_unc_member: Mapped[bool] = mapped_column(Boolean, default=False)
     unc_wallet_nonce: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    api_key_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    api_key_prefix: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    api_key_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     domains = relationship("Domain", back_populates="owner", cascade="all, delete-orphan")

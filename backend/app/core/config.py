@@ -12,7 +12,11 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24
 
     acme_directory_url: str = "https://acme-staging-v02.api.letsencrypt.org/directory"
-    acme_contact_email: str = "certificates@uncoin.example"
+    # Must be a real, reachable mailbox on a domain with a valid public-suffix
+    # TLD — Let's Encrypt rejects reserved TLDs like .example/.test/.invalid
+    # outright (invalidContact error) and uses this address for expiry
+    # notices. Set ACME_CONTACT_EMAIL in .env before issuing real certs.
+    acme_contact_email: str = "certificates@unc-ssl-placeholder.com"
     challenge_http_root: str = "/var/www/acme-challenges"
 
     smtp_host: str = "localhost"

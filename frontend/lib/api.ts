@@ -75,8 +75,9 @@ export interface Certificate {
   status: string;
   ca: string;
   validation_method: string;
+  is_wildcard: boolean;
   challenge_target: string | null;
-  challenge_value: string | null;
+  challenge_values: string[];
   not_before: string | null;
   not_after: string | null;
   error_message: string | null;
@@ -151,8 +152,8 @@ export const api = {
     }),
 
   listCertificates: () => apiFetch<Certificate[]>("/api/certificates"),
-  requestCertificate: (domain_id: string) =>
-    apiFetch<Certificate>("/api/certificates", { method: "POST", body: JSON.stringify({ domain_id }) }),
+  requestCertificate: (domain_id: string, wildcard = false) =>
+    apiFetch<Certificate>("/api/certificates", { method: "POST", body: JSON.stringify({ domain_id, wildcard }) }),
   finalizeCertificate: (certificateId: string) =>
     apiFetch<Certificate>(`/api/certificates/${certificateId}/finalize`, { method: "POST" }),
   downloadCertificate: (certificateId: string) =>
@@ -173,4 +174,20 @@ export const api = {
   listPayments: () => apiFetch<Payment[]>("/api/payments"),
   submitUncPayment: (domain_id: string, tx_hash: string) =>
     apiFetch<Payment>("/api/payments/unc/submit", { method: "POST", body: JSON.stringify({ domain_id, tx_hash }) }),
+
+  apiKeyStatus: () => apiFetch<ApiKeyStatus>("/api/developer/api-key"),
+  createApiKey: () => apiFetch<ApiKeyCreated>("/api/developer/api-key", { method: "POST" }),
+  revokeApiKey: () => apiFetch<void>("/api/developer/api-key", { method: "DELETE" }),
 };
+
+export interface ApiKeyStatus {
+  prefix: string | null;
+  created_at: string | null;
+  has_key: boolean;
+}
+
+export interface ApiKeyCreated {
+  api_key: string;
+  prefix: string;
+  created_at: string;
+}

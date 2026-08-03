@@ -2,36 +2,43 @@
 
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
+import UncLogo from "./UncLogo";
 
 export default function Navbar() {
   const { user, logout } = useAuth();
 
   return (
-    <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-10">
+    <header className="border-b border-slate-200 bg-white/90 backdrop-blur sticky top-0 z-10">
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-        <Link href="/" className="font-semibold text-unc-500">
-          UNC SSL
+        <Link href="/">
+          <UncLogo />
         </Link>
-        <nav className="flex items-center gap-4 text-sm">
-          <Link href="/ssl-checker" className="hover:text-unc-500">
+        <nav className="flex items-center gap-5 text-sm text-slate-600">
+          <Link href="/ssl-checker" className="hover:text-unc-600">
             SSL Checker
           </Link>
           {user ? (
             <>
-              <Link href="/dashboard" className="hover:text-unc-500">
+              <Link href="/dashboard" className="hover:text-unc-600">
                 Dashboard
               </Link>
-              <button onClick={logout} className="text-slate-400 hover:text-white">
+              <Link href="/dashboard/certificates" className="hover:text-unc-600">
+                Certificates
+              </Link>
+              <Link href="/dashboard/developer" className="hover:text-unc-600">
+                Developer
+              </Link>
+              <button onClick={logout} className="text-slate-500 hover:text-slate-900">
                 Log out
               </button>
             </>
           ) : (
             <>
-              <Link href="/login" className="hover:text-unc-500">
-                Log in
+              <Link href="/login" className="border border-slate-300 hover:border-slate-400 rounded-md px-3 py-1.5 text-slate-700">
+                Log In
               </Link>
-              <Link href="/signup" className="bg-unc-600 hover:bg-unc-500 px-3 py-1.5 rounded-md text-white">
-                Sign up
+              <Link href="/signup" className="bg-unc-500 hover:bg-unc-600 px-4 py-1.5 rounded-md text-white font-medium">
+                Get Free SSL
               </Link>
             </>
           )}

@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import datetime
 
@@ -59,6 +60,11 @@ def request_certificate(payload: CertificateRequest, db: Session = Depends(get_d
             status_code=400,
             detail="Certificate issuance requires HTTP or DNS validation (email verification alone is not accepted by Let's Encrypt)",
         )
+    if payload.wildcard and domain.verification_method != "dns":
+        raise HTTPException(
+            status_code=400,
+            detail="Wildcard certificates can only be validated via DNS-01 — re-verify this domain using the DNS TXT method.",
+        )
 
     payment: Payment | None = None
     if not current_user.is_unc_member:
@@ -82,6 +88,7 @@ def request_certificate(payload: CertificateRequest, db: Session = Depends(get_d
         domain_id=domain.id,
         status="awaiting_challenge",
         validation_method=domain.verification_method,
+        is_wildcard=payload.wildcard,
     )
     db.add(certificate)
     db.commit()
@@ -93,7 +100,7 @@ def request_certificate(payload: CertificateRequest, db: Session = Depends(get_d
         db.commit()
 
     try:
-        instructions = start_order(str(certificate.id), domain.name, domain.verification_method)
+        instructions = start_order(str(certificate.id), domain.name, domain.verification_method, wildcard=payload.wildcard)
     except AcmeIssuanceError as exc:
         certificate.status = "failed"
         certificate.error_message = str(exc)
@@ -104,9 +111,10 @@ def request_certificate(payload: CertificateRequest, db: Session = Depends(get_d
 
     if instructions["type"] == "http":
         certificate.challenge_target = instructions["url_path"]
+        certificate.challenge_value = json.dumps([instructions["content"]])
     else:
         certificate.challenge_target = instructions["record_name"]
-    certificate.challenge_value = instructions.get("content") or instructions.get("record_value")
+        certificate.challenge_value = json.dumps(instructions["record_values"])
 
     db.add(certificate)
     db.commit()

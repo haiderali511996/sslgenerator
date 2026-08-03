@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { api, ChainConfig, Certificate, Domain, Payment, VerificationChallenge, WalletStatus } from "@/lib/api";
 import { sendUncPayment } from "@/lib/wallet";
+import { AccordionStep } from "@/components/AccordionStep";
 
 type Method = "http" | "dns" | "email";
+type Step = "domains" | "type" | "payment" | "finalize";
 
 export default function DomainDetailPage() {
   const params = useParams<{ id: string }>();
@@ -22,20 +24,40 @@ export default function DomainDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [wantWildcard, setWantWildcard] = useState(false);
+  const [typeConfirmed, setTypeConfirmed] = useState(false);
+
   const [walletStatus, setWalletStatus] = useState<WalletStatus | null>(null);
   const [chainConfig, setChainConfig] = useState<ChainConfig | null>(null);
   const [payment, setPayment] = useState<Payment | null>(null);
+
+  const [openStep, setOpenStep] = useState<Step>("domains");
 
   useEffect(() => {
     refreshDomain();
     api.listCertificates().then((certs) => {
       const latest = certs.filter((c) => c.domain_id === domainId).sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
-      if (latest) setCertificate(latest);
+      if (latest) {
+        setCertificate(latest);
+        setWantWildcard(latest.is_wildcard);
+        setTypeConfirmed(true);
+      }
     });
     api.walletStatus().then(setWalletStatus).catch(() => {});
     api.walletConfig().then(setChainConfig).catch(() => {});
     refreshPayment();
   }, [domainId]);
+
+  const domainVerified = !!domain?.is_verified;
+  const paymentSatisfied = !!(walletStatus?.is_unc_member || payment?.status === "confirmed");
+
+  useEffect(() => {
+    if (!domainVerified) setOpenStep("domains");
+    else if (!typeConfirmed) setOpenStep("type");
+    else if (!paymentSatisfied && !certificate) setOpenStep("payment");
+    else setOpenStep("finalize");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domainVerified, typeConfirmed, paymentSatisfied, certificate?.status]);
 
   function refreshPayment() {
     api.listPayments().then((payments) => {
@@ -101,7 +123,7 @@ export default function DomainDetailPage() {
     setError(null);
     setBusy(true);
     try {
-      const cert = await api.requestCertificate(domainId);
+      const cert = await api.requestCertificate(domainId, wantWildcard);
       setCertificate(cert);
       refreshPayment();
     } catch (err) {
@@ -148,194 +170,251 @@ export default function DomainDetailPage() {
     URL.revokeObjectURL(url);
   }
 
-  if (!domain) return <p className="text-slate-400">Loading domain...</p>;
+  function downloadAll() {
+    if (!downloaded) return;
+    downloadFile("certificate.crt", downloaded.certificate_pem);
+    if (downloaded.chain_pem) downloadFile("ca_bundle.crt", downloaded.chain_pem);
+    downloadFile("private.key", downloaded.private_key_pem);
+  }
+
+  if (!domain) return <p className="text-slate-500 px-4 py-8">Loading domain...</p>;
 
   return (
-    <div className="max-w-2xl space-y-8">
-      <div>
+    <div className="max-w-3xl mx-auto px-4 py-8">
+      <div className="mb-6">
         <h1 className="text-2xl font-semibold">{domain.name}</h1>
-        <p className={domain.is_verified ? "text-unc-500" : "text-slate-400"}>
-          {domain.is_verified ? `Verified via ${domain.verification_method}` : "Ownership not verified yet"}
-        </p>
+        <p className="text-slate-500 text-sm">SSL Certificate Setup — complete the steps below to issue your certificate.</p>
       </div>
 
-      {error && <p className="text-red-400 text-sm">{error}</p>}
+      {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
 
-      {!domain.is_verified && (
-        <section className="border border-slate-800 rounded-lg p-4 space-y-4">
-          <h2 className="font-medium">1. Verify domain ownership</h2>
-          <div className="flex gap-2">
-            {(["http", "dns", "email"] as Method[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => {
-                  setMethod(m);
-                  setChallenge(null);
-                }}
-                className={`px-3 py-1.5 rounded-md text-sm border ${
-                  method === m ? "border-unc-500 text-unc-500" : "border-slate-700 text-slate-400"
-                }`}
-              >
-                {m === "http" ? "Upload file" : m === "dns" ? "DNS TXT record" : "Email"}
-              </button>
-            ))}
-          </div>
+      <div className="card overflow-hidden">
+        <AccordionStep title="Domain Validation" complete={domainVerified} open={openStep === "domains"} onToggle={() => setOpenStep("domains")}>
+          {domainVerified ? (
+            <p className="text-sm text-unc-600">Verified via {domain.verification_method}.</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                {(["http", "dns", "email"] as Method[]).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      setMethod(m);
+                      setChallenge(null);
+                    }}
+                    className={`px-3 py-1.5 rounded-md text-sm border ${
+                      method === m ? "border-unc-500 text-unc-600 bg-unc-50" : "border-slate-300 text-slate-500"
+                    }`}
+                  >
+                    {m === "http" ? "Upload file" : m === "dns" ? "DNS TXT record" : "Email"}
+                  </button>
+                ))}
+              </div>
 
-          {method === "email" && !challenge && (
-            <input
-              value={targetEmail}
-              onChange={(e) => setTargetEmail(e.target.value)}
-              placeholder={`admin@${domain.name}`}
-              className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2"
-            />
-          )}
-
-          {!challenge && (
-            <button disabled={busy} onClick={startVerification} className="bg-unc-600 hover:bg-unc-500 disabled:opacity-50 px-4 py-2 rounded-md text-white">
-              Start verification
-            </button>
-          )}
-
-          {challenge && challenge.status !== "verified" && (
-            <div className="bg-slate-900 border border-slate-800 rounded-md p-3 text-sm space-y-2">
-              {challenge.method === "http" && (
-                <>
-                  <p>Upload a file to your web server at:</p>
-                  <code className="block break-all bg-black/40 px-2 py-1 rounded">
-                    http://{domain.name}/.well-known/unc-ssl-challenge/{challenge.token}
-                  </code>
-                  <p>With exactly this content:</p>
-                  <code className="block break-all bg-black/40 px-2 py-1 rounded">{challenge.expected_value}</code>
-                </>
+              {method === "email" && !challenge && (
+                <input value={targetEmail} onChange={(e) => setTargetEmail(e.target.value)} placeholder={`admin@${domain.name}`} className="input w-full" />
               )}
-              {challenge.method === "dns" && (
-                <>
-                  <p>Add a TXT record:</p>
-                  <code className="block break-all bg-black/40 px-2 py-1 rounded">_unc-ssl-challenge.{domain.name}</code>
-                  <p>With value:</p>
-                  <code className="block break-all bg-black/40 px-2 py-1 rounded">{challenge.expected_value}</code>
-                </>
-              )}
-              {challenge.method === "email" && (
-                <>
-                  <p>
-                    We sent a 6-digit code to <strong>{challenge.target_email}</strong>. Enter it below.
-                  </p>
-                  <input value={code} onChange={(e) => setCode(e.target.value)} maxLength={6} className="bg-slate-800 border border-slate-700 rounded-md px-3 py-2 w-32" />
-                </>
-              )}
-              <button disabled={busy} onClick={checkVerification} className="bg-unc-600 hover:bg-unc-500 disabled:opacity-50 px-4 py-2 rounded-md text-white">
-                {busy ? "Checking..." : "Check now"}
-              </button>
-            </div>
-          )}
-        </section>
-      )}
 
-      {domain.is_verified && (
-        <section className="border border-slate-800 rounded-lg p-4 space-y-4">
-          <h2 className="font-medium">2. Generate SSL certificate</h2>
-
-          {domain.verification_method === "email" && !certificate && (
-            <p className="text-amber-400 text-sm">
-              Let&apos;s Encrypt can&apos;t validate ownership by email. Re-verify this domain using the HTTP file or DNS TXT method
-              above to issue a real certificate.
-            </p>
-          )}
-
-          {!certificate && domain.verification_method !== "email" && (
-            <>
-              {walletStatus?.is_unc_member ? (
-                <p className="text-sm text-unc-500 mb-2">UNC member — this certificate is free.</p>
-              ) : payment?.status === "confirmed" ? (
-                <p className="text-sm text-unc-500 mb-2">Payment confirmed — ready to generate.</p>
-              ) : chainConfig ? (
-                <div className="bg-slate-900 border border-slate-800 rounded-md p-3 text-sm space-y-2 mb-2">
-                  <p>
-                    This domain requires a payment of <strong>{chainConfig.cert_price} {chainConfig.native_symbol}</strong>{" "}
-                    (or a linked wallet holding {chainConfig.min_balance_for_free}+ {chainConfig.native_symbol} for free access).
-                  </p>
-                  {!walletStatus?.address ? (
-                    <p className="text-amber-400">
-                      Link a UNC wallet from the{" "}
-                      <Link href="/dashboard" className="underline">
-                        dashboard
-                      </Link>{" "}
-                      first.
-                    </p>
-                  ) : (
-                    <button disabled={busy} onClick={payWithWallet} className="bg-unc-600 hover:bg-unc-500 disabled:opacity-50 px-4 py-2 rounded-md text-white">
-                      {busy ? "Waiting for payment..." : `Pay ${chainConfig.cert_price} ${chainConfig.native_symbol}`}
-                    </button>
-                  )}
-                  {payment?.status === "failed" && <p className="text-red-400">{payment.error_message}</p>}
-                </div>
-              ) : null}
-
-              <button
-                disabled={busy || !(walletStatus?.is_unc_member || payment?.status === "confirmed")}
-                onClick={requestCertificate}
-                className="bg-unc-600 hover:bg-unc-500 disabled:opacity-50 px-4 py-2 rounded-md text-white"
-              >
-                Request certificate
-              </button>
-            </>
-          )}
-
-          {certificate && certificate.status === "awaiting_challenge" && (
-            <div className="bg-slate-900 border border-slate-800 rounded-md p-3 text-sm space-y-2">
-              <p>Publish this on your domain so Let&apos;s Encrypt can validate it:</p>
-              {certificate.validation_method === "http" ? (
-                <>
-                  <p>
-                    File at: <code className="bg-black/40 px-2 py-1 rounded">http://{domain.name}{certificate.challenge_target}</code>
-                  </p>
-                  <p>Content:</p>
-                </>
-              ) : (
-                <p>
-                  TXT record <code className="bg-black/40 px-2 py-1 rounded">{certificate.challenge_target}</code> with value:
-                </p>
-              )}
-              <code className="block break-all bg-black/40 px-2 py-1 rounded">{certificate.challenge_value}</code>
-              <button disabled={busy} onClick={finalizeCertificate} className="bg-unc-600 hover:bg-unc-500 disabled:opacity-50 px-4 py-2 rounded-md text-white">
-                {busy ? "Verifying with Let's Encrypt..." : "I've published it — finalize"}
-              </button>
-            </div>
-          )}
-
-          {certificate && certificate.status === "failed" && (
-            <p className="text-red-400 text-sm">{certificate.error_message}</p>
-          )}
-
-          {certificate && certificate.status === "issued" && (
-            <div className="space-y-3">
-              <p className="text-unc-500">
-                Certificate issued. Valid until {certificate.not_after ? new Date(certificate.not_after).toLocaleDateString() : "-"}.
-              </p>
-              {!downloaded ? (
-                <button disabled={busy} onClick={download} className="bg-unc-600 hover:bg-unc-500 disabled:opacity-50 px-4 py-2 rounded-md text-white">
-                  Download certificate files
+              {!challenge && (
+                <button disabled={busy} onClick={startVerification} className="btn-primary">
+                  Start verification
                 </button>
-              ) : (
-                <div className="flex gap-2 flex-wrap">
-                  <button onClick={() => downloadFile("certificate.crt", downloaded.certificate_pem)} className="border border-slate-700 hover:border-slate-500 px-3 py-2 rounded-md text-sm">
-                    certificate.crt
-                  </button>
-                  {downloaded.chain_pem && (
-                    <button onClick={() => downloadFile("chain.crt", downloaded.chain_pem!)} className="border border-slate-700 hover:border-slate-500 px-3 py-2 rounded-md text-sm">
-                      chain.crt
-                    </button>
+              )}
+
+              {challenge && challenge.status !== "verified" && (
+                <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm space-y-2">
+                  {challenge.method === "http" && (
+                    <>
+                      <p>Upload a file to your web server at:</p>
+                      <code className="block break-all bg-white border border-slate-200 px-2 py-1 rounded">
+                        http://{domain.name}/.well-known/unc-ssl-challenge/{challenge.token}
+                      </code>
+                      <p>With exactly this content:</p>
+                      <code className="block break-all bg-white border border-slate-200 px-2 py-1 rounded">{challenge.expected_value}</code>
+                    </>
                   )}
-                  <button onClick={() => downloadFile("private.key", downloaded.private_key_pem)} className="border border-slate-700 hover:border-slate-500 px-3 py-2 rounded-md text-sm">
-                    private.key
+                  {challenge.method === "dns" && (
+                    <>
+                      <p>Add a TXT record:</p>
+                      <code className="block break-all bg-white border border-slate-200 px-2 py-1 rounded">_unc-ssl-challenge.{domain.name}</code>
+                      <p>With value:</p>
+                      <code className="block break-all bg-white border border-slate-200 px-2 py-1 rounded">{challenge.expected_value}</code>
+                    </>
+                  )}
+                  {challenge.method === "email" && (
+                    <>
+                      <p>
+                        We sent a 6-digit code to <strong>{challenge.target_email}</strong>. Enter it below.
+                      </p>
+                      <input value={code} onChange={(e) => setCode(e.target.value)} maxLength={6} className="input w-32" />
+                    </>
+                  )}
+                  <button disabled={busy} onClick={checkVerification} className="btn-primary">
+                    {busy ? "Checking..." : "Check now"}
                   </button>
                 </div>
               )}
             </div>
           )}
-        </section>
-      )}
+        </AccordionStep>
+
+        <AccordionStep title="Certificate Type" complete={typeConfirmed} open={openStep === "type"} onToggle={() => domainVerified && setOpenStep("type")}>
+          <div className="space-y-4 text-sm">
+            <label className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                checked={wantWildcard}
+                disabled={!!certificate}
+                onChange={(e) => setWantWildcard(e.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                <span className="font-medium">I need a wildcard certificate</span> (*.{domain.name})
+                <p className="text-slate-500">
+                  Secures the domain and every subdomain in one certificate. Requires DNS TXT validation — the ACME protocol
+                  forbids validating wildcards over HTTP.
+                </p>
+              </span>
+            </label>
+            {wantWildcard && domain.verification_method !== "dns" && (
+              <p className="text-amber-600">
+                This domain was verified via {domain.verification_method}. Re-verify using the DNS TXT method above before
+                requesting a wildcard certificate.
+              </p>
+            )}
+            <p className="text-slate-500">
+              <strong>Validity:</strong> 90 days. Let&apos;s Encrypt (and the CA/Browser Forum baseline requirements every public
+              CA follows) does not issue longer-lived &quot;annual&quot; certificates — renew before expiry, or automate renewal
+              with your <Link href="/dashboard/developer" className="text-unc-600 hover:underline">API key</Link>.
+            </p>
+            {!certificate && (
+              <button
+                onClick={() => setTypeConfirmed(true)}
+                disabled={wantWildcard && domain.verification_method !== "dns"}
+                className="btn-primary"
+              >
+                Next Step →
+              </button>
+            )}
+          </div>
+        </AccordionStep>
+
+        <AccordionStep
+          title="Payment"
+          complete={paymentSatisfied}
+          open={openStep === "payment"}
+          onToggle={() => typeConfirmed && setOpenStep("payment")}
+        >
+          <div className="text-sm space-y-3">
+            {walletStatus?.is_unc_member ? (
+              <p className="text-unc-600">UNC member — this certificate is free.</p>
+            ) : payment?.status === "confirmed" ? (
+              <p className="text-unc-600">Payment confirmed — ready to generate.</p>
+            ) : chainConfig ? (
+              <div className="bg-slate-50 border border-slate-200 rounded-md p-3 space-y-2">
+                <p>
+                  This domain requires a payment of{" "}
+                  <strong>
+                    {chainConfig.cert_price} {chainConfig.native_symbol}
+                  </strong>{" "}
+                  (or a linked wallet holding {chainConfig.min_balance_for_free}+ {chainConfig.native_symbol} for free access).
+                </p>
+                {!walletStatus?.address ? (
+                  <p className="text-amber-600">
+                    Link a UNC wallet from the{" "}
+                    <Link href="/dashboard" className="underline">
+                      dashboard
+                    </Link>{" "}
+                    first.
+                  </p>
+                ) : (
+                  <button disabled={busy} onClick={payWithWallet} className="btn-primary">
+                    {busy ? "Waiting for payment..." : `Pay ${chainConfig.cert_price} ${chainConfig.native_symbol}`}
+                  </button>
+                )}
+                {payment?.status === "failed" && <p className="text-red-600">{payment.error_message}</p>}
+              </div>
+            ) : null}
+          </div>
+        </AccordionStep>
+
+        <AccordionStep
+          title="Finalize & Issue"
+          complete={certificate?.status === "issued"}
+          open={openStep === "finalize"}
+          onToggle={() => paymentSatisfied && setOpenStep("finalize")}
+        >
+          <div className="text-sm space-y-3">
+            {!certificate && (
+              <button disabled={busy || !paymentSatisfied} onClick={requestCertificate} className="btn-primary">
+                {busy ? "Starting..." : "Create Certificate"}
+              </button>
+            )}
+
+            {certificate && certificate.status === "awaiting_challenge" && (
+              <div className="bg-slate-50 border border-slate-200 rounded-md p-3 space-y-2">
+                <p>Publish the following on your domain so Let&apos;s Encrypt can validate it:</p>
+                {certificate.validation_method === "http" ? (
+                  <p>
+                    File at:{" "}
+                    <code className="bg-white border border-slate-200 px-2 py-1 rounded">
+                      http://{domain.name}
+                      {certificate.challenge_target}
+                    </code>
+                  </p>
+                ) : (
+                  <p>
+                    TXT record <code className="bg-white border border-slate-200 px-2 py-1 rounded">{certificate.challenge_target}</code>{" "}
+                    {certificate.challenge_values.length > 1 ? "with these values (add one record per value):" : "with value:"}
+                  </p>
+                )}
+                {certificate.challenge_values.map((v) => (
+                  <code key={v} className="block break-all bg-white border border-slate-200 px-2 py-1 rounded">
+                    {v}
+                  </code>
+                ))}
+                <button disabled={busy} onClick={finalizeCertificate} className="btn-primary">
+                  {busy ? "Verifying with Let's Encrypt..." : "I've published it — finalize"}
+                </button>
+              </div>
+            )}
+
+            {certificate && certificate.status === "failed" && <p className="text-red-600">{certificate.error_message}</p>}
+
+            {certificate && certificate.status === "issued" && (
+              <div className="space-y-3">
+                <p className="text-unc-600">
+                  Certificate issued. Valid until {certificate.not_after ? new Date(certificate.not_after).toLocaleDateString() : "-"}.
+                </p>
+                {!downloaded ? (
+                  <button disabled={busy} onClick={download} className="btn-primary">
+                    Prepare download
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <button onClick={downloadAll} className="btn-primary">
+                      Download All (certificate.crt + ca_bundle.crt + private.key)
+                    </button>
+                    <div className="flex gap-2 flex-wrap">
+                      <button onClick={() => downloadFile("certificate.crt", downloaded.certificate_pem)} className="btn-secondary text-sm">
+                        certificate.crt
+                      </button>
+                      {downloaded.chain_pem && (
+                        <button onClick={() => downloadFile("ca_bundle.crt", downloaded.chain_pem!)} className="btn-secondary text-sm">
+                          ca_bundle.crt
+                        </button>
+                      )}
+                      <button onClick={() => downloadFile("private.key", downloaded.private_key_pem)} className="btn-secondary text-sm">
+                        private.key
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </AccordionStep>
+      </div>
     </div>
   );
 }

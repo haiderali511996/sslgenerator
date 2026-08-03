@@ -26,35 +26,24 @@ export default function SslCheckerPage() {
   }
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-2xl mx-auto px-4 py-12">
       <h1 className="text-2xl font-semibold mb-2">SSL Checker</h1>
-      <p className="text-slate-400 mb-6">Check the SSL certificate on any host — no account needed.</p>
+      <p className="text-slate-500 mb-6">Check the SSL certificate on any host — no account needed.</p>
 
       <form onSubmit={handleSubmit} className="flex gap-2 mb-8">
-        <input
-          value={host}
-          onChange={(e) => setHost(e.target.value)}
-          placeholder="example.com"
-          required
-          className="flex-1 bg-slate-900 border border-slate-700 rounded-md px-3 py-2"
-        />
-        <input
-          type="number"
-          value={port}
-          onChange={(e) => setPort(Number(e.target.value))}
-          className="w-24 bg-slate-900 border border-slate-700 rounded-md px-3 py-2"
-        />
-        <button disabled={busy} className="bg-unc-600 hover:bg-unc-500 disabled:opacity-50 px-4 py-2 rounded-md text-white">
+        <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="example.com" required className="input flex-1" />
+        <input type="number" value={port} onChange={(e) => setPort(Number(e.target.value))} className="input w-24" />
+        <button disabled={busy} className="btn-primary">
           {busy ? "Checking..." : "Check"}
         </button>
       </form>
 
-      {error && <p className="text-red-400 text-sm">{error}</p>}
+      {error && <p className="text-red-600 text-sm">{error}</p>}
 
       {result && (
-        <div className="border border-slate-800 rounded-lg p-4 space-y-2 text-sm">
+        <div className="card p-4 space-y-2 text-sm">
           {result.error ? (
-            <p className="text-red-400">{result.error}</p>
+            <p className="text-red-600">{result.error}</p>
           ) : (
             <>
               <Row label="Valid" value={result.is_valid ? "Yes" : "No"} highlight={result.is_valid ? "good" : "bad"} />
@@ -68,7 +57,7 @@ export default function SslCheckerPage() {
               {result.warnings.length > 0 && (
                 <div className="pt-2">
                   {result.warnings.map((w) => (
-                    <p key={w} className="text-amber-400">
+                    <p key={w} className="text-amber-600">
                       ⚠ {w}
                     </p>
                   ))}
@@ -84,9 +73,9 @@ export default function SslCheckerPage() {
 
 function Row({ label, value, highlight }: { label: string; value: string | null; highlight?: "good" | "bad" }) {
   return (
-    <div className="flex justify-between border-b border-slate-800/60 py-1.5">
+    <div className="flex justify-between border-b border-slate-100 py-1.5">
       <span className="text-slate-500">{label}</span>
-      <span className={highlight === "good" ? "text-unc-500" : highlight === "bad" ? "text-red-400" : ""}>{value || "-"}</span>
+      <span className={highlight === "good" ? "text-unc-600 font-medium" : highlight === "bad" ? "text-red-600 font-medium" : ""}>{value || "-"}</span>
     </div>
   );
 }

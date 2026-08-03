@@ -16,7 +16,12 @@ A free SSL certificate generator for the UNC (Universal Network Coin) ecosystem 
   - Upload a file to the domain's web server
   - Add a DNS TXT record
   - Verify via an email address on the domain (e.g. `admin@yourdomain.com`)
-- Request a real Let's Encrypt SSL certificate once a domain is verified
+- Request a real Let's Encrypt SSL certificate once a domain is verified, including **wildcard** (`*.domain.com`)
+  certificates — DNS-01 validation only, per the ACME spec
+- Certificate download as `certificate.crt` / `ca_bundle.crt` / `private.key`, matching standard CA naming
+- Certificates list with status tabs (Draft / Pending Validation / Expiring Soon / Issued / Expired / Failed)
+- Per-user API key for REST automation — same `Authorization: Bearer` header as interactive login, so ACME/CI
+  clients can issue certificates without a browser session (`/dashboard/developer`)
 - Built-in SSL checker — inspect any host's certificate, expiry, issuer, and TLS version
 - UNC wallet integration:
   - Connect a browser wallet (MetaMask-compatible) and link it to your account by signing a nonce — no gas, no on-chain write
@@ -55,6 +60,16 @@ our backend. So:
   completes issuance.
 - Domains verified only by email must re-verify via HTTP or DNS before a real certificate can be issued —
   ACME has no email challenge type.
+- There is no "annual" certificate option. The CA/Browser Forum baseline requirements every public CA follows
+  cap public TLS certificate lifetime well under a year (Let's Encrypt issues 90-day certs); this app doesn't
+  offer a plan that would be technically impossible to deliver.
+
+## Explicitly not built
+
+To keep this focused on actually issuing working SSL certificates rather than spreading thin, the following
+ZeroSSL-style pages were intentionally left out — they're separate products, not SSL tooling: Partner/affiliate
+program, Blog, Help Center knowledge base, AI support chat, uptime status page. Worth scoping separately if
+needed.
 
 ## Local development
 

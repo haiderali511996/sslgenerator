@@ -1,0 +1,27 @@
+# Production build of the SSL generator frontend.
+#
+# Copied to /var/www/ssl-unc/frontend/Dockerfile.prod by ssl-subdomain-setup.sh
+# and selected by docker-compose.prod.yml. It is deliberately kept outside the
+# sslgenerator repository so a `git pull` there never clobbers it.
+#
+# The only difference from the repository's own Dockerfile is the ARG below.
+# NEXT_PUBLIC_* variables are inlined into the JavaScript bundle by `next build`
+# and are NOT read at runtime, so setting one under `environment:` in compose
+# leaves the browser still calling whatever was compiled in — in this case the
+# http://localhost:8000 fallback in frontend/lib/api.ts. It has to arrive as a
+# build argument, before `npm run build` runs.
+FROM node:20-alpine
+
+WORKDIR /app
+
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+
+COPY package.json ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+EXPOSE 3000
+CMD ["npm", "start"]

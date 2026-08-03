@@ -1,0 +1,70 @@
+# Production overlay for the SSL generator on ssl.unctech.co.
+#
+#   cd /var/www/ssl-unc
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# The repository's own docker-compose.yml is a development file: it publishes
+# 3000, 8000 and 5432 on the host, which are the ports unctech.co, the UNC API
+# and PostgreSQL already occupy. Bringing it up unchanged on this server would
+# collide with all three. Everything below exists to prevent that.
+services:
+  db:
+    # No published port at all. The backend reaches it over the compose
+    # network; nothing outside the host has any reason to.
+    ports: !override []
+    environment:
+      POSTGRES_USER: ssl_unc
+      POSTGRES_DB: ssl_unc
+      # Supplied by .env.prod alongside this file, never committed.
+      POSTGRES_PASSWORD: ${SSL_DB_PASSWORD:?SSL_DB_PASSWORD is required}
+    restart: always
+
+  backend:
+    # Bound to loopback so only nginx can reach it, and on 8200 because 8000
+    # belongs to the UNC API.
+    ports: !override
+      - "127.0.0.1:8200:8000"
+    environment:
+      DATABASE_URL: postgresql://ssl_unc:${SSL_DB_PASSWORD}@db:5432/ssl_unc
+      # Overrides whatever backend/.env carries. The shipped example leaves it
+      # at "change-me-in-production", which would let anyone who has read the
+      # public repository mint a valid session token for any account.
+      JWT_SECRET: ${SSL_JWT_SECRET:?SSL_JWT_SECRET is required}
+      FRONTEND_BASE_URL: https://ssl.unctech.co
+    # Waits for PostgreSQL, then runs `alembic upgrade head` before uvicorn.
+    # Nothing else in this project creates the schema.
+    command: ["sh", "/usr/local/bin/entrypoint.sh"]
+    # Drop the live source mount from the dev file — production runs the image
+    # that was built, not whatever happens to be in the working tree.
+    volumes: !override
+      - acme_data:/app/data
+      - ./backend/entrypoint.prod.sh:/usr/local/bin/entrypoint.sh:ro
+    restart: always
+
+  frontend:
+    # NEXT_PUBLIC_* is compiled into the client bundle by `next build`; it is
+    # not read at runtime. Setting it under `environment:` does nothing for the
+    # browser, which is why every call went to the localhost:8000 fallback in
+    # lib/api.ts. It has to be a build argument, and changing it requires a
+    # rebuild (--build), not a restart.
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        # No /api suffix: every path in lib/api.ts already starts with /api,
+        # and nginx passes the prefix through untouched. Adding it here would
+        # produce /api/api/ssl-checker.
+        NEXT_PUBLIC_API_BASE_URL: https://ssl.unctech.co
+    # The base file also sets NEXT_PUBLIC_API_BASE_URL under `environment:`
+    # for local dev. It has no effect on the already-built bundle above, but
+    # left at the dev value it's misleading to read later, so override it to
+    # match rather than leave two different URLs sitting side by side.
+    environment: !override
+      NEXT_PUBLIC_API_BASE_URL: https://ssl.unctech.co
+    ports: !override
+      - "127.0.0.1:3200:3000"
+    restart: always
+
+volumes:
+  db_data:
+  acme_data:

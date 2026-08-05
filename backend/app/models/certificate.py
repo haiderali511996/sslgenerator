@@ -1,7 +1,8 @@
+import json
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,6 +20,7 @@ class Certificate(Base):
 
     ca: Mapped[str] = mapped_column(String(64), default="lets_encrypt")
     validation_method: Mapped[str] = mapped_column(String(32), nullable=False)
+    is_wildcard: Mapped[bool] = mapped_column(Boolean, default=False)
 
     challenge_target: Mapped[str | None] = mapped_column(String(512), nullable=True)
     challenge_value: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -37,3 +39,12 @@ class Certificate(Base):
     issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     domain = relationship("Domain", back_populates="certificates")
+
+    @property
+    def challenge_values(self) -> list[str]:
+        if not self.challenge_value:
+            return []
+        try:
+            return json.loads(self.challenge_value)
+        except (json.JSONDecodeError, TypeError):
+            return [self.challenge_value]

@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from jose import jwt
@@ -6,6 +8,16 @@ from passlib.context import CryptContext
 from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+API_KEY_PREFIX = "unc_"
+
+
+def generate_api_key() -> str:
+    return f"{API_KEY_PREFIX}{secrets.token_urlsafe(32)}"
+
+
+def hash_api_key(api_key: str) -> str:
+    return hashlib.sha256(api_key.encode()).hexdigest()
 
 
 def hash_password(password: str) -> str:

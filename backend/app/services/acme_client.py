@@ -17,6 +17,13 @@ email-based challenge type. A domain must complete HTTP-01 or DNS-01
 before a certificate can be issued, regardless of how it was verified in
 our own system.
 
+Wildcard certificates (*.domain.com) are only ever validated via DNS-01
+— the ACME spec forbids HTTP-01 for wildcard names — and the resulting
+order carries two authorizations (the bare domain and the wildcard),
+each needing its own TXT record value published at the *same* DNS name
+(_acme-challenge.<domain>). DNS allows multiple TXT records at one name,
+so the customer publishes both values there.
+
 In-progress ACME orders are kept in an in-process dict keyed by
 certificate id. This is sufficient for a single backend instance; a
 multi-instance deployment should pin a customer's issuance flow to one
@@ -81,7 +88,7 @@ def _get_acme_client() -> client.ClientV2:
     return acme_client
 
 
-def _generate_key_and_csr(domain_name: str) -> tuple[bytes, bytes]:
+def _generate_key_and_csr(domain_names: list[str]) -> tuple[bytes, bytes]:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     private_key_pem = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
@@ -90,71 +97,79 @@ def _generate_key_and_csr(domain_name: str) -> tuple[bytes, bytes]:
     )
     pkey = OpenSSL.crypto.load_privatekey(OpenSSL.crypto.FILETYPE_PEM, private_key_pem)
     csr_pem = crypto_util.make_csr(
-        OpenSSL.crypto.dump_privatekey(OpenSSL.crypto.FILETYPE_PEM, pkey), [domain_name]
+        OpenSSL.crypto.dump_privatekey(OpenSSL.crypto.FILETYPE_PEM, pkey), domain_names
     )
     return private_key_pem, csr_pem
 
 
-def start_order(certificate_id: str, domain_name: str, validation_method: str) -> dict:
+def start_order(certificate_id: str, domain_name: str, validation_method: str, wildcard: bool = False) -> dict:
     """Creates the ACME order and returns instructions for the customer.
 
     For 'http': {'type': 'http', 'url_path': '/.well-known/acme-challenge/<token>', 'content': '<key_authorization>'}
-    For 'dns': {'type': 'dns', 'record_name': '_acme-challenge.<domain>', 'record_value': '<validation>'}
+    For 'dns': {'type': 'dns', 'record_name': '_acme-challenge.<domain>', 'record_values': ['<validation>', ...]}
     """
+    if wildcard and validation_method != "dns":
+        raise AcmeIssuanceError("Wildcard certificates can only be validated via DNS-01.")
     if validation_method not in ("http", "dns"):
         raise AcmeIssuanceError(
             "Let's Encrypt requires HTTP-01 or DNS-01 validation; "
             "email verification alone cannot be used to issue a certificate."
         )
 
+    domain_names = [domain_name, f"*.{domain_name}"] if wildcard else [domain_name]
+    chall_type = challenges.HTTP01 if validation_method == "http" else challenges.DNS01
+
     try:
         acme_client = _get_acme_client()
-        private_key_pem, csr_pem = _generate_key_and_csr(domain_name)
+        private_key_pem, csr_pem = _generate_key_and_csr(domain_names)
         order = acme_client.new_order(csr_pem)
 
-        authz = order.authorizations[0]
-        chall_type = challenges.HTTP01 if validation_method == "http" else challenges.DNS01
-        achall = next(c for c in authz.body.challenges if isinstance(c.chall, chall_type))
-        response, validation = achall.response_and_validation(acme_client.net.key)
+        pending_challenges = []
+        for authz in order.authorizations:
+            achall = next(c for c in authz.body.challenges if isinstance(c.chall, chall_type))
+            response, validation = achall.response_and_validation(acme_client.net.key)
+            pending_challenges.append({"achall": achall, "response": response, "validation": validation})
     except errors.Error as exc:
         raise AcmeIssuanceError(f"Could not start ACME order: {exc}") from exc
 
     _PENDING_ORDERS[certificate_id] = {
         "acme_client": acme_client,
         "order": order,
-        "achall": achall,
-        "response": response,
+        "challenges": pending_challenges,
         "domain_name": domain_name,
         "private_key_pem": private_key_pem,
         "validation_method": validation_method,
+        "wildcard": wildcard,
     }
 
     if validation_method == "http":
+        first = pending_challenges[0]
         return {
             "type": "http",
-            "url_path": f"/.well-known/acme-challenge/{achall.chall.encode('token')}",
-            "content": validation,
+            "url_path": f"/.well-known/acme-challenge/{first['achall'].chall.encode('token')}",
+            "content": first["validation"],
         }
     return {
         "type": "dns",
         "record_name": f"_acme-challenge.{domain_name}",
-        "record_value": validation,
+        "record_values": [c["validation"] for c in pending_challenges],
     }
 
 
 def finalize_order(certificate_id: str) -> dict:
-    """Verifies the customer has published the challenge, then completes issuance."""
+    """Verifies the customer has published the challenge(s), then completes issuance."""
     pending = _PENDING_ORDERS.get(certificate_id)
     if not pending:
         raise AcmeIssuanceError("No pending ACME order for this certificate; call start_order first")
 
     domain_name = pending["domain_name"]
     validation_method = pending["validation_method"]
-
-    key_authorization = pending["response"].key_authorization
+    pending_challenges = pending["challenges"]
 
     if validation_method == "http":
-        token = pending["achall"].chall.encode("token")
+        challenge = pending_challenges[0]
+        token = challenge["achall"].chall.encode("token")
+        key_authorization = challenge["response"].key_authorization
         url = f"http://{domain_name}/.well-known/acme-challenge/{token}"
         try:
             resp = httpx.get(url, timeout=10, follow_redirects=True)
@@ -166,15 +181,20 @@ def finalize_order(certificate_id: str) -> dict:
                 f"Make sure it returns exactly: {key_authorization}"
             )
     else:
-        if key_authorization not in dns_checker.get_txt_records(domain_name, subdomain_prefix="_acme-challenge"):
+        published = dns_checker.get_txt_records(domain_name, subdomain_prefix="_acme-challenge")
+        expected_values = [c["response"].key_authorization for c in pending_challenges]
+        missing = [v for v in expected_values if v not in published]
+        if missing:
             raise AcmeIssuanceError(
-                f"TXT record at _acme-challenge.{domain_name} not found or does not match yet. "
-                f"Expected value: {key_authorization}"
+                f"TXT record(s) at _acme-challenge.{domain_name} not found or incomplete yet. "
+                f"Expected {'value' if len(expected_values) == 1 else 'all of these values (one per record)'}: "
+                f"{', '.join(expected_values)}"
             )
 
     try:
         acme_client: client.ClientV2 = pending["acme_client"]
-        acme_client.answer_challenge(pending["achall"], pending["response"])
+        for challenge in pending_challenges:
+            acme_client.answer_challenge(challenge["achall"], challenge["response"])
         finalized_order = acme_client.poll_and_finalize(pending["order"])
     except errors.ValidationError as exc:
         raise AcmeIssuanceError(f"ACME domain validation failed: {exc}") from exc

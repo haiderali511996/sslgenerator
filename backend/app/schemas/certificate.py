@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class CertificateRequest(BaseModel):
     domain_id: uuid.UUID
+    wildcard: bool = False
 
 
 class CertificateOut(BaseModel):
@@ -14,8 +15,9 @@ class CertificateOut(BaseModel):
     status: str
     ca: str
     validation_method: str
+    is_wildcard: bool
     challenge_target: str | None
-    challenge_value: str | None
+    challenge_values: list[str]
     not_before: datetime | None
     not_after: datetime | None
     error_message: str | None

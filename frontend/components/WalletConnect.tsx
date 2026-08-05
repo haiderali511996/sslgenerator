@@ -50,32 +50,32 @@ export default function WalletConnect() {
   if (!status) return null;
 
   return (
-    <div className="border border-slate-800 rounded-lg p-4">
+    <div className="card p-4">
       {status.address ? (
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
-            <p className="text-sm text-slate-400">UNC wallet linked</p>
+            <p className="text-sm text-slate-500">UNC wallet linked</p>
             <p className="font-mono text-sm">{status.address}</p>
             <p className="text-sm mt-1">
               Balance: <span className="font-medium">{status.balance ?? "-"}</span> UNC
-              {status.is_unc_member && <span className="ml-2 text-unc-500">Member — free certificates</span>}
+              {status.is_unc_member && <span className="ml-2 text-unc-600 font-medium">Member — free certificates</span>}
             </p>
           </div>
-          <button onClick={handleUnlink} disabled={busy} className="text-sm text-slate-400 hover:text-white">
+          <button onClick={handleUnlink} disabled={busy} className="text-sm text-slate-500 hover:text-slate-900">
             Unlink
           </button>
         </div>
       ) : (
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-slate-500">
             Link your UNC wallet to unlock free certificates at {status.min_balance_for_free}+ UNC balance.
           </p>
-          <button onClick={handleConnect} disabled={busy} className="bg-unc-600 hover:bg-unc-500 disabled:opacity-50 px-4 py-2 rounded-md text-sm text-white">
+          <button onClick={handleConnect} disabled={busy} className="btn-primary text-sm">
             {busy ? "Connecting..." : "Connect wallet"}
           </button>
         </div>
       )}
-      {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
+      {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
     </div>
   );
 }

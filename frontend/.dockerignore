@@ -1,0 +1,16 @@
+# Copied to /var/www/ssl-unc/frontend/.dockerignore by ssl-subdomain-setup.sh.
+#
+# The repository has no .dockerignore, and its Dockerfile does `COPY package.json`
+# then `npm install` then `COPY . .` — so a node_modules/ or .next/ left on the
+# host by an earlier local build is copied straight over the freshly installed
+# one, and the container can serve a stale bundle no matter what build arguments
+# were passed. Excluding them makes the build depend only on the source.
+node_modules
+.next
+out
+npm-debug.log*
+.env
+.env.local
+.git
+Dockerfile
+Dockerfile.prod

@@ -6,19 +6,36 @@ import { useAuth } from "@/lib/auth-context";
 import { api, Certificate, Domain } from "@/lib/api";
 import { BUCKET_LABELS, bucketFor, CertBucket } from "@/lib/certStatus";
 
-const TABS: CertBucket[] = ["draft", "pending_validation", "expiring_soon", "issued", "expired", "failed"];
+const TABS: CertBucket[] = ["draft", "pending_validation", "expiring_soon", "issued", "expired", "failed", "cancelled"];
+const CANCELLABLE_STATUSES = new Set(["pending", "awaiting_challenge", "failed"]);
 
 export default function CertificatesPage() {
   const { user, loading } = useAuth();
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [domains, setDomains] = useState<Domain[]>([]);
   const [tab, setTab] = useState<CertBucket>("issued");
+  const [search, setSearch] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
-    api.listCertificates().then(setCertificates).catch(() => {});
+    refresh();
     api.listDomains().then(setDomains).catch(() => {});
   }, [user]);
+
+  function refresh() {
+    api.listCertificates().then(setCertificates).catch(() => {});
+  }
+
+  async function handleCancel(certId: string) {
+    setBusyId(certId);
+    try {
+      await api.cancelCertificate(certId);
+      refresh();
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   const domainNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -26,7 +43,13 @@ export default function CertificatesPage() {
     return map;
   }, [domains]);
 
-  const filtered = certificates.filter((c) => bucketFor(c) === tab);
+  const needle = search.trim().toLowerCase();
+  const filtered = certificates.filter((c) => {
+    if (bucketFor(c) !== tab) return false;
+    if (!needle) return true;
+    const domainName = (domainNameById.get(c.domain_id) || "").toLowerCase();
+    return domainName.includes(needle) || c.additional_domains.some((d) => d.toLowerCase().includes(needle));
+  });
 
   if (loading) return <p className="text-slate-500 px-4 py-8">Loading...</p>;
   if (!user)
@@ -42,11 +65,19 @@ export default function CertificatesPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <h1 className="text-2xl font-semibold">Certificates</h1>
-        <Link href="/dashboard" className="btn-primary">
-          New Certificate
-        </Link>
+        <div className="flex items-center gap-2">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search domain..."
+            className="input w-56"
+          />
+          <Link href="/dashboard" className="btn-primary whitespace-nowrap">
+            New Certificate
+          </Link>
+        </div>
       </div>
 
       <div className="flex gap-1 border-b border-slate-200 mb-4 overflow-x-auto">
@@ -89,14 +120,24 @@ export default function CertificatesPage() {
                   <td className="px-4 py-3 font-medium">
                     {domainNameById.get(cert.domain_id) || cert.domain_id}
                     {cert.is_wildcard && <span className="ml-2 text-xs text-unc-600 bg-unc-50 px-1.5 py-0.5 rounded">wildcard</span>}
+                    {cert.additional_domains.length > 0 && (
+                      <span className="ml-2 text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                        +{cert.additional_domains.length} more
+                      </span>
+                    )}
                   </td>
-                  <td className="px-4 py-3 text-slate-500">90-Day</td>
+                  <td className="px-4 py-3 text-slate-500">90-Day · RSA {cert.key_size}</td>
                   <td className="px-4 py-3 text-slate-500 uppercase text-xs">{cert.validation_method}</td>
                   <td className="px-4 py-3 text-slate-500">{cert.not_after ? new Date(cert.not_after).toLocaleDateString() : "—"}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-3 text-right space-x-3">
                     <Link href={`/dashboard/domains/${cert.domain_id}`} className="text-unc-600 hover:underline">
                       Manage
                     </Link>
+                    {CANCELLABLE_STATUSES.has(cert.status) && (
+                      <button disabled={busyId === cert.id} onClick={() => handleCancel(cert.id)} className="text-red-600 hover:underline">
+                        Cancel
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

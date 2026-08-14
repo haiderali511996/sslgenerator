@@ -18,6 +18,8 @@ class User(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    email_verification_code: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    email_verification_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     unc_wallet_address: Mapped[str | None] = mapped_column(String(128), nullable=True)
     is_unc_member: Mapped[bool] = mapped_column(Boolean, default=False)

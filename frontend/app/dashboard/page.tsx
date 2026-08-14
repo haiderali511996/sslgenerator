@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { api, Certificate, Domain } from "@/lib/api";
 import { BUCKET_LABELS, bucketFor, CertBucket } from "@/lib/certStatus";
 import WalletConnect from "@/components/WalletConnect";
+import EmailVerificationBanner from "@/components/EmailVerificationBanner";
 
 const STAT_ORDER: CertBucket[] = ["expiring_soon", "draft", "issued", "pending_validation", "expired"];
 
@@ -61,9 +62,11 @@ export default function DashboardPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-semibold mb-1">Dashboard</h1>
-      <p className="text-slate-500 mb-6">
+      <p className="text-slate-500 mb-4">
         {user.is_unc_member ? "UNC member — free certificates unlocked." : "Add a domain, verify ownership, then generate an SSL certificate."}
       </p>
+
+      <EmailVerificationBanner />
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
         {STAT_ORDER.map((bucket) => (

@@ -4,9 +4,19 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
+class ChallengeItem(BaseModel):
+    domain: str
+    url_path: str | None = None
+    content: str | None = None
+    record_name: str | None = None
+    record_value: str | None = None
+
+
 class CertificateRequest(BaseModel):
     domain_id: uuid.UUID
     wildcard: bool = False
+    additional_domain_ids: list[uuid.UUID] = []
+    key_size: int = 2048
 
 
 class CertificateOut(BaseModel):
@@ -16,8 +26,9 @@ class CertificateOut(BaseModel):
     ca: str
     validation_method: str
     is_wildcard: bool
-    challenge_target: str | None
-    challenge_values: list[str]
+    key_size: int
+    additional_domains: list[str]
+    challenge_items: list[ChallengeItem]
     not_before: datetime | None
     not_after: datetime | None
     error_message: str | None

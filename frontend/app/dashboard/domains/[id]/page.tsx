@@ -25,6 +25,9 @@ export default function DomainDetailPage() {
   const [busy, setBusy] = useState(false);
 
   const [wantWildcard, setWantWildcard] = useState(false);
+  const [keySize, setKeySize] = useState(2048);
+  const [additionalDomainIds, setAdditionalDomainIds] = useState<string[]>([]);
+  const [allDomains, setAllDomains] = useState<Domain[]>([]);
   const [typeConfirmed, setTypeConfirmed] = useState(false);
 
   const [walletStatus, setWalletStatus] = useState<WalletStatus | null>(null);
@@ -35,11 +38,13 @@ export default function DomainDetailPage() {
 
   useEffect(() => {
     refreshDomain();
+    api.listDomains().then(setAllDomains).catch(() => {});
     api.listCertificates().then((certs) => {
       const latest = certs.filter((c) => c.domain_id === domainId).sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
       if (latest) {
         setCertificate(latest);
         setWantWildcard(latest.is_wildcard);
+        setKeySize(latest.key_size);
         setTypeConfirmed(true);
       }
     });
@@ -47,6 +52,10 @@ export default function DomainDetailPage() {
     api.walletConfig().then(setChainConfig).catch(() => {});
     refreshPayment();
   }, [domainId]);
+
+  const eligibleAdditionalDomains = allDomains.filter(
+    (d) => d.id !== domainId && d.is_verified && domain && d.verification_method === domain.verification_method
+  );
 
   const domainVerified = !!domain?.is_verified;
   const paymentSatisfied = !!(walletStatus?.is_unc_member || payment?.status === "confirmed");
@@ -123,11 +132,30 @@ export default function DomainDetailPage() {
     setError(null);
     setBusy(true);
     try {
-      const cert = await api.requestCertificate(domainId, wantWildcard);
+      const cert = await api.requestCertificate({
+        domain_id: domainId,
+        wildcard: wantWildcard,
+        additional_domain_ids: additionalDomainIds,
+        key_size: keySize,
+      });
       setCertificate(cert);
       refreshPayment();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not request certificate");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelCertificate() {
+    if (!certificate) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const cert = await api.cancelCertificate(certificate.id);
+      setCertificate(cert);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not cancel certificate");
     } finally {
       setBusy(false);
     }
@@ -282,6 +310,44 @@ export default function DomainDetailPage() {
                 requesting a wildcard certificate.
               </p>
             )}
+
+            {eligibleAdditionalDomains.length > 0 && (
+              <div>
+                <p className="font-medium mb-1">Add other domains to this certificate (SAN)</p>
+                <p className="text-slate-500 mb-2">
+                  Only domains verified via the same method ({domain.verification_method}) can share one certificate.
+                </p>
+                <div className="space-y-1">
+                  {eligibleAdditionalDomains.map((d) => (
+                    <label key={d.id} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        disabled={!!certificate}
+                        checked={additionalDomainIds.includes(d.id)}
+                        onChange={(e) =>
+                          setAdditionalDomainIds((prev) => (e.target.checked ? [...prev, d.id] : prev.filter((id) => id !== d.id)))
+                        }
+                      />
+                      {d.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <p className="font-medium mb-1">Encryption Algorithm</p>
+              <div className="space-y-1">
+                {[2048, 3072, 4096].map((size) => (
+                  <label key={size} className="flex items-center gap-2">
+                    <input type="radio" name="key_size" disabled={!!certificate} checked={keySize === size} onChange={() => setKeySize(size)} />
+                    RSA {size} {size === 2048 && "(Maximum Compatibility)"}
+                    {size === 4096 && "(Strongest)"}
+                  </label>
+                ))}
+              </div>
+            </div>
+
             <p className="text-slate-500">
               <strong>Validity:</strong> 90 days. Let&apos;s Encrypt (and the CA/Browser Forum baseline requirements every public
               CA follows) does not issue longer-lived &quot;annual&quot; certificates — renew before expiry, or automate renewal
@@ -345,41 +411,62 @@ export default function DomainDetailPage() {
           onToggle={() => paymentSatisfied && setOpenStep("finalize")}
         >
           <div className="text-sm space-y-3">
-            {!certificate && (
+            {(!certificate || certificate.status === "cancelled") && (
               <button disabled={busy || !paymentSatisfied} onClick={requestCertificate} className="btn-primary">
                 {busy ? "Starting..." : "Create Certificate"}
               </button>
             )}
 
             {certificate && certificate.status === "awaiting_challenge" && (
-              <div className="bg-slate-50 border border-slate-200 rounded-md p-3 space-y-2">
-                <p>Publish the following on your domain so Let&apos;s Encrypt can validate it:</p>
-                {certificate.validation_method === "http" ? (
-                  <p>
-                    File at:{" "}
-                    <code className="bg-white border border-slate-200 px-2 py-1 rounded">
-                      http://{domain.name}
-                      {certificate.challenge_target}
-                    </code>
-                  </p>
-                ) : (
-                  <p>
-                    TXT record <code className="bg-white border border-slate-200 px-2 py-1 rounded">{certificate.challenge_target}</code>{" "}
-                    {certificate.challenge_values.length > 1 ? "with these values (add one record per value):" : "with value:"}
-                  </p>
-                )}
-                {certificate.challenge_values.map((v) => (
-                  <code key={v} className="block break-all bg-white border border-slate-200 px-2 py-1 rounded">
-                    {v}
-                  </code>
+              <div className="bg-slate-50 border border-slate-200 rounded-md p-3 space-y-3">
+                <p>Publish the following on each domain so Let&apos;s Encrypt can validate it:</p>
+                {certificate.challenge_items.map((item, i) => (
+                  <div key={i} className="border-t border-slate-200 pt-2 first:border-0 first:pt-0">
+                    <p className="font-medium">{item.domain}</p>
+                    {certificate.validation_method === "http" ? (
+                      <>
+                        <p>
+                          File at:{" "}
+                          <code className="bg-white border border-slate-200 px-2 py-1 rounded break-all">
+                            http://{item.domain}
+                            {item.url_path}
+                          </code>
+                        </p>
+                        <p>Content:</p>
+                        <code className="block break-all bg-white border border-slate-200 px-2 py-1 rounded">{item.content}</code>
+                      </>
+                    ) : (
+                      <>
+                        <p>
+                          TXT record <code className="bg-white border border-slate-200 px-2 py-1 rounded">{item.record_name}</code> with
+                          value:
+                        </p>
+                        <code className="block break-all bg-white border border-slate-200 px-2 py-1 rounded">{item.record_value}</code>
+                      </>
+                    )}
+                  </div>
                 ))}
-                <button disabled={busy} onClick={finalizeCertificate} className="btn-primary">
-                  {busy ? "Verifying with Let's Encrypt..." : "I've published it — finalize"}
+                <div className="flex gap-3">
+                  <button disabled={busy} onClick={finalizeCertificate} className="btn-primary">
+                    {busy ? "Verifying with Let's Encrypt..." : "I've published it — finalize"}
+                  </button>
+                  <button disabled={busy} onClick={cancelCertificate} className="btn-secondary text-red-600">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {certificate && certificate.status === "failed" && (
+              <div className="space-y-2">
+                <p className="text-red-600">{certificate.error_message}</p>
+                <button disabled={busy} onClick={cancelCertificate} className="btn-secondary text-sm">
+                  Dismiss
                 </button>
               </div>
             )}
 
-            {certificate && certificate.status === "failed" && <p className="text-red-600">{certificate.error_message}</p>}
+            {certificate && certificate.status === "cancelled" && <p className="text-slate-500">This certificate request was cancelled.</p>}
 
             {certificate && certificate.status === "issued" && (
               <div className="space-y-3">

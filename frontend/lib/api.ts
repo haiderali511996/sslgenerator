@@ -69,6 +69,14 @@ export interface VerificationChallenge {
   target_email: string | null;
 }
 
+export interface ChallengeItem {
+  domain: string;
+  url_path: string | null;
+  content: string | null;
+  record_name: string | null;
+  record_value: string | null;
+}
+
 export interface Certificate {
   id: string;
   domain_id: string;
@@ -76,8 +84,9 @@ export interface Certificate {
   ca: string;
   validation_method: string;
   is_wildcard: boolean;
-  challenge_target: string | null;
-  challenge_values: string[];
+  key_size: number;
+  additional_domains: string[];
+  challenge_items: ChallengeItem[];
   not_before: string | null;
   not_after: string | null;
   error_message: string | null;
@@ -137,6 +146,9 @@ export const api = {
   login: (data: { email: string; password: string }) =>
     apiFetch<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify(data) }),
   me: () => apiFetch<User>("/api/auth/me"),
+  requestEmailVerification: () => apiFetch<void>("/api/auth/verify-email/request", { method: "POST" }),
+  confirmEmailVerification: (code: string) =>
+    apiFetch<User>("/api/auth/verify-email/confirm", { method: "POST", body: JSON.stringify({ code }) }),
 
   listDomains: () => apiFetch<Domain[]>("/api/domains"),
   createDomain: (name: string) => apiFetch<Domain>("/api/domains", { method: "POST", body: JSON.stringify({ name }) }),
@@ -151,11 +163,13 @@ export const api = {
       body: JSON.stringify({ code }),
     }),
 
-  listCertificates: () => apiFetch<Certificate[]>("/api/certificates"),
-  requestCertificate: (domain_id: string, wildcard = false) =>
-    apiFetch<Certificate>("/api/certificates", { method: "POST", body: JSON.stringify({ domain_id, wildcard }) }),
+  listCertificates: (q?: string) => apiFetch<Certificate[]>(`/api/certificates${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  requestCertificate: (params: { domain_id: string; wildcard?: boolean; additional_domain_ids?: string[]; key_size?: number }) =>
+    apiFetch<Certificate>("/api/certificates", { method: "POST", body: JSON.stringify(params) }),
   finalizeCertificate: (certificateId: string) =>
     apiFetch<Certificate>(`/api/certificates/${certificateId}/finalize`, { method: "POST" }),
+  cancelCertificate: (certificateId: string) =>
+    apiFetch<Certificate>(`/api/certificates/${certificateId}/cancel`, { method: "POST" }),
   downloadCertificate: (certificateId: string) =>
     apiFetch<{ certificate_pem: string; chain_pem: string | null; private_key_pem: string }>(
       `/api/certificates/${certificateId}/download`

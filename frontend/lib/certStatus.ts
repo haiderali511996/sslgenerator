@@ -1,10 +1,11 @@
 import { Certificate } from "./api";
 
-export type CertBucket = "draft" | "pending_validation" | "expiring_soon" | "issued" | "expired" | "failed";
+export type CertBucket = "draft" | "pending_validation" | "expiring_soon" | "issued" | "expired" | "failed" | "cancelled";
 
 const EXPIRING_SOON_DAYS = 14;
 
 export function bucketFor(cert: Certificate): CertBucket {
+  if (cert.status === "cancelled") return "cancelled";
   if (cert.status === "failed") return "failed";
   if (cert.status === "pending" || cert.status === "awaiting_challenge") return "draft";
   if (cert.status === "issuing") return "pending_validation";
@@ -26,4 +27,5 @@ export const BUCKET_LABELS: Record<CertBucket, string> = {
   issued: "Issued",
   expired: "Expired",
   failed: "Failed",
+  cancelled: "Cancelled",
 };

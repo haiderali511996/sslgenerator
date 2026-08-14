@@ -27,6 +27,10 @@ class UserOut(BaseModel):
         from_attributes = True
 
 
+class EmailVerificationConfirm(BaseModel):
+    code: str
+
+
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"

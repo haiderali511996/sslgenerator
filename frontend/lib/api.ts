@@ -70,7 +70,7 @@ export interface VerificationChallenge {
 }
 
 export interface ChallengeItem {
-  domain: string;
+  domain: string | null;
   url_path: string | null;
   content: string | null;
   record_name: string | null;

@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class ChallengeItem(BaseModel):
-    domain: str
+    domain: str | None = None
     url_path: str | None = None
     content: str | None = None
     record_name: str | None = None

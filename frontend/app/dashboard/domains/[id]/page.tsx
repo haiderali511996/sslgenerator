@@ -422,13 +422,13 @@ export default function DomainDetailPage() {
                 <p>Publish the following on each domain so Let&apos;s Encrypt can validate it:</p>
                 {certificate.challenge_items.map((item, i) => (
                   <div key={i} className="border-t border-slate-200 pt-2 first:border-0 first:pt-0">
-                    <p className="font-medium">{item.domain}</p>
+                    <p className="font-medium">{item.domain || domain.name}</p>
                     {certificate.validation_method === "http" ? (
                       <>
                         <p>
                           File at:{" "}
                           <code className="bg-white border border-slate-200 px-2 py-1 rounded break-all">
-                            http://{item.domain}
+                            http://{item.domain || domain.name}
                             {item.url_path}
                           </code>
                         </p>

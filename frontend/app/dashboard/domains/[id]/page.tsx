@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { api, ChainConfig, Certificate, Domain, Payment, VerificationChallenge, WalletStatus } from "@/lib/api";
 import { sendUncPayment } from "@/lib/wallet";
+import JSZip from "jszip";
 import { AccordionStep } from "@/components/AccordionStep";
 import { ErrorBanner, StatusBanner } from "@/components/StatusBanner";
 
@@ -205,11 +206,25 @@ export default function DomainDetailPage() {
     URL.revokeObjectURL(url);
   }
 
-  function downloadAll() {
+  async function downloadAllAsZip() {
     if (!downloaded) return;
-    downloadFile("certificate.crt", downloaded.certificate_pem);
-    if (downloaded.chain_pem) downloadFile("ca_bundle.crt", downloaded.chain_pem);
-    downloadFile("private.key", downloaded.private_key_pem);
+    setBusy(true);
+    try {
+      const zip = new JSZip();
+      zip.file("certificate.crt", downloaded.certificate_pem);
+      if (downloaded.chain_pem) zip.file("ca_bundle.crt", downloaded.chain_pem);
+      zip.file("private.key", downloaded.private_key_pem);
+      const blob = await zip.generateAsync({ type: "blob" });
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${domain?.name || "certificate"}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (!domain) return <p className="text-slate-500 px-4 py-8">Loading domain...</p>;
@@ -510,20 +525,20 @@ export default function DomainDetailPage() {
                   </button>
                 ) : (
                   <div className="space-y-2">
-                    <button onClick={downloadAll} className="btn-primary">
-                      Download All (certificate.crt + ca_bundle.crt + private.key)
+                    <button disabled={busy} onClick={downloadAllAsZip} className="btn-primary">
+                      {busy ? "Zipping..." : "Download All as ZIP (certificate.crt + ca_bundle.crt + private.key)"}
                     </button>
                     <div className="flex gap-2 flex-wrap">
                       <button onClick={() => downloadFile("certificate.crt", downloaded.certificate_pem)} className="btn-secondary text-sm">
-                        certificate.crt
+                        certificate.crt only
                       </button>
                       {downloaded.chain_pem && (
                         <button onClick={() => downloadFile("ca_bundle.crt", downloaded.chain_pem!)} className="btn-secondary text-sm">
-                          ca_bundle.crt
+                          ca_bundle.crt only
                         </button>
                       )}
                       <button onClick={() => downloadFile("private.key", downloaded.private_key_pem)} className="btn-secondary text-sm">
-                        private.key
+                        private.key only
                       </button>
                     </div>
                   </div>

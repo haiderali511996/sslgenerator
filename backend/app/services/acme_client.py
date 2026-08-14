@@ -213,8 +213,9 @@ def finalize_order(certificate_id: str) -> dict:
                 raise AcmeIssuanceError(f"Could not reach {url}: {exc}") from exc
             if resp.status_code != 200 or resp.text.strip() != key_authorization:
                 raise AcmeIssuanceError(
-                    f"Challenge file at {url} not found or content does not match yet. "
-                    f"Make sure it returns exactly: {key_authorization}"
+                    f"Challenge file at {url} not found or does not match yet. Make sure it returns exactly: "
+                    f"{key_authorization} — then wait a moment and try finalizing again; changes to a live web "
+                    f"server can take a few seconds to take effect."
                 )
         else:
             # DNS-01 requires base64url(SHA256(key_authorization)) in the TXT
@@ -230,7 +231,8 @@ def finalize_order(certificate_id: str) -> dict:
             if expected_value not in published:
                 raise AcmeIssuanceError(
                     f"TXT record at _acme-challenge.{base_domain} not found or does not match yet for {identifier}. "
-                    f"Expected value: {expected_value}"
+                    f"Expected value: {expected_value} — DNS changes can take a few minutes (sometimes longer, "
+                    f"depending on your provider) to propagate. Wait a bit and try finalizing again."
                 )
 
     try:

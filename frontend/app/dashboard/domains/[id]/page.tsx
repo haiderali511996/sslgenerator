@@ -18,6 +18,8 @@ export default function DomainDetailPage() {
   const [method, setMethod] = useState<Method>("http");
   const [targetEmail, setTargetEmail] = useState("");
   const [challenge, setChallenge] = useState<VerificationChallenge | null>(null);
+  const [checkedOnce, setCheckedOnce] = useState(false);
+  const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
   const [code, setCode] = useState("");
   const [certificate, setCertificate] = useState<Certificate | null>(null);
   const [downloaded, setDownloaded] = useState<{ certificate_pem: string; chain_pem: string | null; private_key_pem: string } | null>(null);
@@ -106,6 +108,8 @@ export default function DomainDetailPage() {
     try {
       const result = await api.startVerification(domainId, method, method === "email" ? targetEmail : undefined);
       setChallenge(result);
+      setCheckedOnce(false);
+      setLastCheckedAt(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start verification");
     } finally {
@@ -120,6 +124,8 @@ export default function DomainDetailPage() {
     try {
       const result = await api.checkVerification(domainId, challenge.id, method === "email" ? code : undefined);
       setChallenge(result);
+      setCheckedOnce(true);
+      setLastCheckedAt(new Date());
       if (result.status === "verified") refreshDomain();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification check failed");
@@ -280,6 +286,16 @@ export default function DomainDetailPage() {
                   <button disabled={busy} onClick={checkVerification} className="btn-primary">
                     {busy ? "Checking..." : "Check now"}
                   </button>
+                  {checkedOnce && challenge.status !== "verified" && challenge.method !== "email" && (
+                    <p className="text-amber-600">
+                      Not found yet{lastCheckedAt ? ` (last checked ${lastCheckedAt.toLocaleTimeString()})` : ""}. DNS and file
+                      changes can take a few minutes — sometimes longer depending on your provider — to become visible. Please
+                      wait a bit and click <strong>Check now</strong> again.
+                    </p>
+                  )}
+                  {checkedOnce && challenge.status === "failed" && challenge.method === "email" && (
+                    <p className="text-red-600">That code didn&apos;t match. Double-check it and try again.</p>
+                  )}
                 </div>
               )}
             </div>

@@ -217,12 +217,20 @@ def finalize_order(certificate_id: str) -> dict:
                     f"Make sure it returns exactly: {key_authorization}"
                 )
         else:
+            # DNS-01 requires base64url(SHA256(key_authorization)) in the TXT
+            # record — a different, dot-free value from the raw
+            # key_authorization used above for HTTP-01. That's what
+            # start_order() already computed as `validation` and told the
+            # customer to publish; checking against the raw key_authorization
+            # here (as before) could never match, since that string never
+            # appears in DNS at all.
+            expected_value = challenge["validation"]
             base_domain = identifier[2:] if identifier.startswith("*.") else identifier
             published = dns_checker.get_txt_records(base_domain, subdomain_prefix="_acme-challenge")
-            if key_authorization not in published:
+            if expected_value not in published:
                 raise AcmeIssuanceError(
                     f"TXT record at _acme-challenge.{base_domain} not found or does not match yet for {identifier}. "
-                    f"Expected value: {key_authorization}"
+                    f"Expected value: {expected_value}"
                 )
 
     try:

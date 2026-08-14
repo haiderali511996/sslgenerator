@@ -9,6 +9,7 @@ out/
 *.tsbuildinfo
 
 .env
+.env.prod
 backend/.env
 backend/data/
 frontend/.env.local

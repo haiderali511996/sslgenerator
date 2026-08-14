@@ -119,6 +119,7 @@ export interface ChainConfig {
   treasury_address: string;
   cert_price: number;
   min_balance_for_free: number;
+  payments_enabled: boolean;
 }
 
 export interface WalletStatus {

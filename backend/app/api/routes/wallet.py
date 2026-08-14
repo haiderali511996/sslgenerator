@@ -25,6 +25,7 @@ def chain_config():
         treasury_address=settings.unc_treasury_address,
         cert_price=settings.unc_cert_price,
         min_balance_for_free=settings.unc_min_balance_for_free,
+        payments_enabled=settings.unc_payments_enabled,
     )
 
 

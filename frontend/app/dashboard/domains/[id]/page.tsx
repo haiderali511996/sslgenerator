@@ -58,7 +58,7 @@ export default function DomainDetailPage() {
   );
 
   const domainVerified = !!domain?.is_verified;
-  const paymentSatisfied = !!(walletStatus?.is_unc_member || payment?.status === "confirmed");
+  const paymentSatisfied = chainConfig?.payments_enabled === false || !!(walletStatus?.is_unc_member || payment?.status === "confirmed");
 
   useEffect(() => {
     if (!domainVerified) setOpenStep("domains");
@@ -372,7 +372,9 @@ export default function DomainDetailPage() {
           onToggle={() => typeConfirmed && setOpenStep("payment")}
         >
           <div className="text-sm space-y-3">
-            {walletStatus?.is_unc_member ? (
+            {chainConfig?.payments_enabled === false ? (
+              <p className="text-unc-600">90-day SSL certificates are free — no UNC payment required.</p>
+            ) : walletStatus?.is_unc_member ? (
               <p className="text-unc-600">UNC member — this certificate is free.</p>
             ) : payment?.status === "confirmed" ? (
               <p className="text-unc-600">Payment confirmed — ready to generate.</p>

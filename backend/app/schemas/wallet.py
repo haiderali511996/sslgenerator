@@ -28,3 +28,4 @@ class ChainConfigOut(BaseModel):
     treasury_address: str
     cert_price: float
     min_balance_for_free: float
+    payments_enabled: bool

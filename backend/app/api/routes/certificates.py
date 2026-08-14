@@ -111,7 +111,7 @@ def request_certificate(payload: CertificateRequest, db: Session = Depends(get_d
     domain_names.extend(d.name for d in additional_domains)
 
     payment: Payment | None = None
-    if not current_user.is_unc_member:
+    if settings.unc_payments_enabled and not current_user.is_unc_member:
         payment = (
             db.query(Payment)
             .filter(Payment.domain_id == domain.id, Payment.status == "confirmed", Payment.certificate_id.is_(None))

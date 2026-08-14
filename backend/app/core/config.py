@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     unc_min_balance_for_free: float = 1000.0
     unc_min_confirmations: int = 1
 
+    # Master switch for the pay-per-certificate / free-for-holders gate.
+    # False = every 90-day certificate is free for everyone, no wallet or
+    # payment required. Flip to true once UNC's real chain/treasury are
+    # live and you want payment actually enforced again — no code change
+    # needed, just this env var.
+    unc_payments_enabled: bool = False
+
     class Config:
         env_file = ".env"
 

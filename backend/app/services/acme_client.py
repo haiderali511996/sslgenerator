@@ -87,8 +87,17 @@ def _get_acme_client() -> client.ClientV2:
                 email=settings.acme_contact_email, terms_of_service_agreed=True
             )
         )
-    except errors.ConflictError:
-        pass
+    except errors.ConflictError as exc:
+        # The account key is persisted at ACCOUNT_KEY_PATH and reused across
+        # calls, so after the first successful run every later new_account
+        # hits this path (Let's Encrypt returns 409 for an already-known
+        # key). The account URL Boulder returns in the Location header
+        # never reaches ClientNetwork otherwise, so every signed request
+        # after this one — including new_order — gets sent with a JWK
+        # header instead of the required Key ID, and Let's Encrypt rejects
+        # it as malformed ("No Key ID in JWS header"). Registering the
+        # existing account URL here is what makes ClientV2 sign with kid.
+        acme_client.net.account = messages.RegistrationResource(uri=exc.location, body=messages.Registration())
 
     return acme_client
 

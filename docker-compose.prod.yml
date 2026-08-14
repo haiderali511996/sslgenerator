@@ -31,6 +31,16 @@ services:
       # public repository mint a valid session token for any account.
       JWT_SECRET: ${SSL_JWT_SECRET:?SSL_JWT_SECRET is required}
       FRONTEND_BASE_URL: https://ssl.unctech.co
+      # Neither of these was set anywhere in this file before, so the app
+      # silently fell back to its built-in defaults: Let's Encrypt's
+      # STAGING directory (certs signed by a test root nothing trusts) and
+      # a placeholder contact email nobody can reach. ACME_DIRECTORY_URL
+      # defaults to production here since that's what a live site needs;
+      # ACME_CONTACT_EMAIL has no default and fails loudly instead of
+      # silently reusing the placeholder — supply a real, reachable
+      # mailbox in .env.prod, Let's Encrypt uses it for expiry notices.
+      ACME_DIRECTORY_URL: ${ACME_DIRECTORY_URL:-https://acme-v02.api.letsencrypt.org/directory}
+      ACME_CONTACT_EMAIL: ${ACME_CONTACT_EMAIL:?ACME_CONTACT_EMAIL is required, e.g. certs@unctech.co}
     # Waits for PostgreSQL, then runs `alembic upgrade head` before uvicorn.
     # Nothing else in this project creates the schema.
     command: ["sh", "/usr/local/bin/entrypoint.sh"]

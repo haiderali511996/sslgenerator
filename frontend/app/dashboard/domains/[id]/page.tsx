@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { api, ChainConfig, Certificate, Domain, Payment, VerificationChallenge, WalletStatus } from "@/lib/api";
 import { sendUncPayment } from "@/lib/wallet";
 import { AccordionStep } from "@/components/AccordionStep";
+import { ErrorBanner, StatusBanner } from "@/components/StatusBanner";
 
 type Method = "http" | "dns" | "email";
 type Step = "domains" | "type" | "payment" | "finalize";
@@ -220,12 +221,16 @@ export default function DomainDetailPage() {
         <p className="text-slate-500 text-sm">SSL Certificate Setup — complete the steps below to issue your certificate.</p>
       </div>
 
-      {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
+      {error && (
+        <div className="mb-4">
+          <ErrorBanner raw={error} />
+        </div>
+      )}
 
       <div className="card overflow-hidden">
         <AccordionStep title="Domain Validation" complete={domainVerified} open={openStep === "domains"} onToggle={() => setOpenStep("domains")}>
           {domainVerified ? (
-            <p className="text-sm text-unc-600">Verified via {domain.verification_method}.</p>
+            <StatusBanner kind="success" summary={`Verified via ${domain.verification_method}.`} />
           ) : (
             <div className="space-y-4">
               <div className="flex gap-2">
@@ -287,14 +292,15 @@ export default function DomainDetailPage() {
                     {busy ? "Checking..." : "Check now"}
                   </button>
                   {checkedOnce && challenge.status !== "verified" && challenge.method !== "email" && (
-                    <p className="text-amber-600">
-                      Not found yet{lastCheckedAt ? ` (last checked ${lastCheckedAt.toLocaleTimeString()})` : ""}. DNS and file
-                      changes can take a few minutes — sometimes longer depending on your provider — to become visible. Please
-                      wait a bit and click <strong>Check now</strong> again.
-                    </p>
+                    <StatusBanner
+                      kind="pending"
+                      summary={`Not found yet${
+                        lastCheckedAt ? ` (last checked ${lastCheckedAt.toLocaleTimeString()})` : ""
+                      }. Please wait a bit and click Check now again — this can take a few minutes to propagate.`}
+                    />
                   )}
                   {checkedOnce && challenge.status === "failed" && challenge.method === "email" && (
-                    <p className="text-red-600">That code didn&apos;t match. Double-check it and try again.</p>
+                    <StatusBanner kind="error" summary="That code didn't match. Double-check it and try again." />
                   )}
                 </div>
               )}
@@ -321,10 +327,10 @@ export default function DomainDetailPage() {
               </span>
             </label>
             {wantWildcard && domain.verification_method !== "dns" && (
-              <p className="text-amber-600">
-                This domain was verified via {domain.verification_method}. Re-verify using the DNS TXT method above before
-                requesting a wildcard certificate.
-              </p>
+              <StatusBanner
+                kind="warning"
+                summary={`This domain was verified via ${domain.verification_method}. Re-verify using the DNS TXT method above before requesting a wildcard certificate.`}
+              />
             )}
 
             {eligibleAdditionalDomains.length > 0 && (
@@ -389,11 +395,11 @@ export default function DomainDetailPage() {
         >
           <div className="text-sm space-y-3">
             {chainConfig?.payments_enabled === false ? (
-              <p className="text-unc-600">90-day SSL certificates are free — no UNC payment required.</p>
+              <StatusBanner kind="success" summary="90-day SSL certificates are free — no UNC payment required." />
             ) : walletStatus?.is_unc_member ? (
-              <p className="text-unc-600">UNC member — this certificate is free.</p>
+              <StatusBanner kind="success" summary="UNC member — this certificate is free." />
             ) : payment?.status === "confirmed" ? (
-              <p className="text-unc-600">Payment confirmed — ready to generate.</p>
+              <StatusBanner kind="success" summary="Payment confirmed — ready to generate." />
             ) : chainConfig ? (
               <div className="bg-slate-50 border border-slate-200 rounded-md p-3 space-y-2">
                 <p>
@@ -404,19 +410,21 @@ export default function DomainDetailPage() {
                   (or a linked wallet holding {chainConfig.min_balance_for_free}+ {chainConfig.native_symbol} for free access).
                 </p>
                 {!walletStatus?.address ? (
-                  <p className="text-amber-600">
-                    Link a UNC wallet from the{" "}
-                    <Link href="/dashboard" className="underline">
-                      dashboard
-                    </Link>{" "}
-                    first.
-                  </p>
+                  <div className="border rounded-md px-3 py-2 text-sm bg-amber-50 border-amber-200">
+                    <span className="text-amber-700">
+                      ⚠ Link a UNC wallet from the{" "}
+                      <Link href="/dashboard" className="underline">
+                        dashboard
+                      </Link>{" "}
+                      first.
+                    </span>
+                  </div>
                 ) : (
                   <button disabled={busy} onClick={payWithWallet} className="btn-primary">
                     {busy ? "Waiting for payment..." : `Pay ${chainConfig.cert_price} ${chainConfig.native_symbol}`}
                   </button>
                 )}
-                {payment?.status === "failed" && <p className="text-red-600">{payment.error_message}</p>}
+                {payment?.status === "failed" && <ErrorBanner raw={payment.error_message} />}
               </div>
             ) : null}
           </div>
@@ -477,20 +485,25 @@ export default function DomainDetailPage() {
 
             {certificate && certificate.status === "failed" && (
               <div className="space-y-2">
-                <p className="text-red-600">{certificate.error_message}</p>
+                <ErrorBanner raw={certificate.error_message} />
                 <button disabled={busy} onClick={cancelCertificate} className="btn-secondary text-sm">
                   Dismiss
                 </button>
               </div>
             )}
 
-            {certificate && certificate.status === "cancelled" && <p className="text-slate-500">This certificate request was cancelled.</p>}
+            {certificate && certificate.status === "cancelled" && (
+              <StatusBanner kind="warning" summary="This certificate request was cancelled." />
+            )}
 
             {certificate && certificate.status === "issued" && (
               <div className="space-y-3">
-                <p className="text-unc-600">
-                  Certificate issued. Valid until {certificate.not_after ? new Date(certificate.not_after).toLocaleDateString() : "-"}.
-                </p>
+                <StatusBanner
+                  kind="success"
+                  summary={`Certificate issued. Valid until ${
+                    certificate.not_after ? new Date(certificate.not_after).toLocaleDateString() : "-"
+                  }.`}
+                />
                 {!downloaded ? (
                   <button disabled={busy} onClick={download} className="btn-primary">
                     Prepare download

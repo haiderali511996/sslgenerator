@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, ChainConfig, WalletStatus } from "@/lib/api";
 import { connectWallet, ensureUncChain, hasBrowserWallet, signMessage } from "@/lib/wallet";
+import { ErrorBanner } from "./StatusBanner";
 
 export default function WalletConnect() {
   const [config, setConfig] = useState<ChainConfig | null>(null);
@@ -75,7 +76,11 @@ export default function WalletConnect() {
           </button>
         </div>
       )}
-      {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
+      {error && (
+        <div className="mt-2">
+          <ErrorBanner raw={error} />
+        </div>
+      )}
     </div>
   );
 }

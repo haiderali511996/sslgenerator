@@ -29,6 +29,13 @@ class Certificate(Base):
     # JSON list of per-domain challenge instructions: [{domain, url_path|record_name, content|record_value}]
     challenge_items_raw: Mapped[str | None] = mapped_column("challenge_items", Text, nullable=True)
 
+    # ACME order URL, saved as soon as the order is created so finalize can
+    # reconstruct the order (re-fetch it and re-derive the challenges) if
+    # the backend process restarted and lost the in-memory pending-order
+    # state — restarts are routine in production (deploys, crash recovery),
+    # and this is the fix, not a case to just document as a limitation.
+    acme_order_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     private_key_pem: Mapped[str | None] = mapped_column(Text, nullable=True)
     csr_pem: Mapped[str | None] = mapped_column(Text, nullable=True)
     certificate_pem: Mapped[str | None] = mapped_column(Text, nullable=True)

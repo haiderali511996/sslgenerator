@@ -27,11 +27,15 @@ need two different TXT values there; unrelated SAN domains each get
 their own distinct record name. finalize_order() checks each
 authorization against its own derived name/URL accordingly.
 
-In-progress ACME orders are kept in an in-process dict keyed by
-certificate id. This is sufficient for a single backend instance; a
-multi-instance deployment should pin a customer's issuance flow to one
-instance (e.g. via sticky sessions) or persist the order URL and
-reconstruct the order object from it on each call.
+In-progress orders are cached in an in-process dict keyed by certificate
+id for the common case (start and finalize hit the same process). But a
+backend restart between those two calls — a routine event in production,
+not an edge case — used to lose that state entirely and permanently
+strand the certificate with no way to finish. finalize_order() now falls
+back to reconstructing the order from its persisted ACME order URL (see
+_reconstruct_pending) when the in-memory entry is gone, using the same
+persistent account key so the re-derived challenge responses are
+bit-for-bit identical to the ones originally shown to the customer.
 """
 import os
 from pathlib import Path
@@ -125,6 +129,37 @@ def _dns_record_name(identifier_value: str) -> str:
     return f"_acme-challenge.{base}"
 
 
+def _derive_challenges(order: messages.OrderResource, chall_type: type, acme_client: client.ClientV2) -> list[dict]:
+    """Builds the per-identifier challenge/response/validation triples for
+    an order. Shared by fresh orders and orders reconstructed after a
+    restart — response_and_validation() is deterministic given the same
+    account key and challenge token, so both paths produce identical
+    validation values."""
+    pending_challenges = []
+    for authz in order.authorizations:
+        identifier_value = authz.body.identifier.value
+        achall = next(c for c in authz.body.challenges if isinstance(c.chall, chall_type))
+        response, validation = achall.response_and_validation(acme_client.net.key)
+        pending_challenges.append(
+            {"identifier": identifier_value, "achall": achall, "response": response, "validation": validation}
+        )
+    return pending_challenges
+
+
+def _reconstruct_order(acme_client: client.ClientV2, order_uri: str, csr_pem: bytes) -> messages.OrderResource:
+    """Re-fetches an order and its authorizations from Let's Encrypt by URL.
+    Uses the `acme` library's internal POST-as-GET helper — the same one
+    new_order() itself uses — since the public API has no "get order by
+    URI" method; this is how Certbot recovers state after a restart too."""
+    response = acme_client._post_as_get(order_uri)  # noqa: SLF001
+    body = messages.Order.from_json(response.json())
+    authorizations = [
+        acme_client._authzr_from_response(acme_client._post_as_get(url), uri=url)  # noqa: SLF001
+        for url in body.authorizations
+    ]
+    return messages.OrderResource(body=body, uri=order_uri, authorizations=authorizations, csr_pem=csr_pem)
+
+
 def start_order(certificate_id: str, domain_names: list[str], validation_method: str, key_size: int = 2048) -> dict:
     """Creates the ACME order and returns instructions for the customer.
 
@@ -132,8 +167,8 @@ def start_order(certificate_id: str, domain_names: list[str], validation_method:
     multiple unrelated domains — every name in the list is validated the
     same way (validation_method).
 
-    For 'http': {'type': 'http', 'items': [{'domain', 'url_path', 'content'}, ...]}
-    For 'dns': {'type': 'dns', 'items': [{'domain', 'record_name', 'record_value'}, ...]}
+    For 'http': {'type': 'http', 'items': [{'domain', 'url_path', 'content'}, ...], 'order_uri', 'csr_pem', 'private_key_pem'}
+    For 'dns': {'type': 'dns', 'items': [{'domain', 'record_name', 'record_value'}, ...], 'order_uri', 'csr_pem', 'private_key_pem'}
     """
     has_wildcard = any(name.startswith("*.") for name in domain_names)
     if has_wildcard and validation_method != "dns":
@@ -150,15 +185,7 @@ def start_order(certificate_id: str, domain_names: list[str], validation_method:
         acme_client = _get_acme_client()
         private_key_pem, csr_pem = _generate_key_and_csr(domain_names, key_size)
         order = acme_client.new_order(csr_pem)
-
-        pending_challenges = []
-        for authz in order.authorizations:
-            identifier_value = authz.body.identifier.value
-            achall = next(c for c in authz.body.challenges if isinstance(c.chall, chall_type))
-            response, validation = achall.response_and_validation(acme_client.net.key)
-            pending_challenges.append(
-                {"identifier": identifier_value, "achall": achall, "response": response, "validation": validation}
-            )
+        pending_challenges = _derive_challenges(order, chall_type, acme_client)
     except errors.Error as exc:
         raise AcmeIssuanceError(f"Could not start ACME order: {exc}") from exc
 
@@ -166,36 +193,57 @@ def start_order(certificate_id: str, domain_names: list[str], validation_method:
         "acme_client": acme_client,
         "order": order,
         "challenges": pending_challenges,
-        "private_key_pem": private_key_pem,
         "validation_method": validation_method,
     }
 
+    result = {
+        "order_uri": order.uri,
+        "csr_pem": csr_pem.decode(),
+        "private_key_pem": private_key_pem.decode(),
+    }
     if validation_method == "http":
-        return {
-            "type": "http",
-            "items": [
-                {
-                    "domain": c["identifier"],
-                    "url_path": f"/.well-known/acme-challenge/{c['achall'].chall.encode('token')}",
-                    "content": c["validation"],
-                }
-                for c in pending_challenges
-            ],
-        }
-    return {
-        "type": "dns",
-        "items": [
+        result["type"] = "http"
+        result["items"] = [
+            {
+                "domain": c["identifier"],
+                "url_path": f"/.well-known/acme-challenge/{c['achall'].chall.encode('token')}",
+                "content": c["validation"],
+            }
+            for c in pending_challenges
+        ]
+    else:
+        result["type"] = "dns"
+        result["items"] = [
             {"domain": c["identifier"], "record_name": _dns_record_name(c["identifier"]), "record_value": c["validation"]}
             for c in pending_challenges
-        ],
-    }
+        ]
+    return result
 
 
-def finalize_order(certificate_id: str) -> dict:
-    """Verifies the customer has published the challenge(s), then completes issuance."""
+def finalize_order(
+    certificate_id: str,
+    order_uri: str | None = None,
+    csr_pem: str | None = None,
+    validation_method: str | None = None,
+) -> dict:
+    """Verifies the customer has published the challenge(s), then completes
+    issuance. If the in-memory pending order is gone (e.g. the backend
+    restarted since start_order), pass order_uri/csr_pem/validation_method
+    (all persisted on the Certificate row) to reconstruct it instead of
+    failing outright."""
     pending = _PENDING_ORDERS.get(certificate_id)
+
     if not pending:
-        raise AcmeIssuanceError("No pending ACME order for this certificate; call start_order first")
+        if not order_uri or not csr_pem or not validation_method:
+            raise AcmeIssuanceError("No pending ACME order for this certificate; call start_order first")
+        try:
+            acme_client = _get_acme_client()
+            chall_type = challenges.HTTP01 if validation_method == "http" else challenges.DNS01
+            order = _reconstruct_order(acme_client, order_uri, csr_pem.encode())
+            pending_challenges = _derive_challenges(order, chall_type, acme_client)
+        except errors.Error as exc:
+            raise AcmeIssuanceError(f"Could not resume ACME order: {exc}") from exc
+        pending = {"acme_client": acme_client, "order": order, "challenges": pending_challenges, "validation_method": validation_method}
 
     validation_method = pending["validation_method"]
     pending_challenges = pending["challenges"]
@@ -252,7 +300,6 @@ def finalize_order(certificate_id: str) -> dict:
     cert = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, leaf_pem)
 
     return {
-        "private_key_pem": pending["private_key_pem"].decode(),
         "certificate_pem": leaf_pem,
         "chain_pem": chain_pem.strip() or None,
         "not_before": cert.get_notBefore().decode(),

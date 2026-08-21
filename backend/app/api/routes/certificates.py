@@ -155,7 +155,13 @@ def request_certificate(payload: CertificateRequest, db: Session = Depends(get_d
         db.refresh(certificate)
         return certificate
 
+    # Persisted immediately (not just on success) so finalize can
+    # reconstruct this order if the backend restarts before the customer
+    # gets back to publish the challenge and finalize.
     certificate.challenge_items_raw = json.dumps(instructions["items"])
+    certificate.acme_order_uri = instructions["order_uri"]
+    certificate.csr_pem = instructions["csr_pem"]
+    certificate.private_key_pem = instructions["private_key_pem"]
     db.add(certificate)
     db.commit()
     db.refresh(certificate)
@@ -170,7 +176,12 @@ def finalize_certificate(certificate_id: uuid.UUID, db: Session = Depends(get_db
         raise HTTPException(status_code=400, detail=f"Certificate is not awaiting a challenge (status: {certificate.status})")
 
     try:
-        result = finalize_order(str(certificate.id))
+        result = finalize_order(
+            str(certificate.id),
+            order_uri=certificate.acme_order_uri,
+            csr_pem=certificate.csr_pem,
+            validation_method=certificate.validation_method,
+        )
     except AcmeIssuanceError as exc:
         certificate.error_message = str(exc)
         db.add(certificate)
@@ -179,7 +190,6 @@ def finalize_certificate(certificate_id: uuid.UUID, db: Session = Depends(get_db
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     certificate.status = "issued"
-    certificate.private_key_pem = result["private_key_pem"]
     certificate.certificate_pem = result["certificate_pem"]
     certificate.chain_pem = result["chain_pem"]
     certificate.not_before = _parse_openssl_time(result["not_before"])
